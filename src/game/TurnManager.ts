@@ -1,8 +1,12 @@
 import {
+  BOT_SPAWN,
   COUNTDOWN_SECONDS,
   FALL_Y_THRESHOLD,
   MAX_SHOT_SECONDS,
   OOB_CONFIRM_SECONDS,
+  PEN_SPECS,
+  PenTypeId,
+  PLAYER_SPAWN,
   SETTLE_ANG_SPEED,
   SETTLE_HOLD_SECONDS,
   SETTLE_LIN_SPEED,
@@ -10,10 +14,12 @@ import {
 import { abilityHudDefaults, EdgeWarningState, GameStateManager, PlayerId } from './GameState';
 import {
   computeMultiplayerSpawn,
+  GameMode,
   generateTurnQueue,
   MultiplayerMatchConfig,
   MultiplayerMatchSnapshot,
   MultiplayerPlayerState,
+  rotateTurnQueue,
   TeamId,
 } from './MultiplayerTypes';
 import { PhysicsManager } from './PhysicsManager';
@@ -36,6 +42,7 @@ export class TurnManager {
 
   // Match configuration & multiplayer tracking
   private multiplayerConfig: MultiplayerMatchConfig | null = null;
+  private gameMode: GameMode = 'VS_AI';
   private players: MultiplayerPlayerState[] = [];
   private turnQueue: string[] = [];
   private currentTurnIndex = 0;
@@ -43,12 +50,15 @@ export class TurnManager {
   private activePlayerId: string = 'player';
   private winningTeam: TeamId | null = null;
 
-  // Turn timer state (monotonic performance.now() based)
+  // Turn timer state (monotonic performance.now() deadline based)
   private turnTimerTotal = 15; // 0 = unlimited
   private turnTimeRemaining = 15;
+  private turnDeadlineMs = 0;
+  private pausedRemainingMs = 0;
   private isTimerRunning = false;
   private isPaused = false;
   private lastTimerSecondInt = 15;
+  private lastTimerTenthInt = 150;
   private turnTimeoutNotice = false;
   private timeoutNoticeTimer = 0;
   private transitionTimer = 0;
@@ -91,8 +101,43 @@ export class TurnManager {
     return this.multiplayerConfig;
   }
 
+  public getGameMode(): GameMode {
+    return this.gameMode;
+  }
+
   public setPaused(paused: boolean): void {
+    if (paused === this.isPaused) return;
     this.isPaused = paused;
+    if (this.isTimerRunning && this.turnTimerTotal > 0) {
+      if (paused) {
+        this.pausedRemainingMs = Math.max(0, this.turnDeadlineMs - performance.now());
+      } else {
+        this.turnDeadlineMs = performance.now() + this.pausedRemainingMs;
+      }
+    }
+  }
+
+  /**
+   * Race-safe check executed right at drag release or Special Shot firing.
+   * Ensures a shot cannot fire after the turn deadline has already expired or while a transition banner blocks input.
+   */
+  public canAcceptShot(): boolean {
+    const snap = this.state.getSnapshot();
+    if (snap.matchState !== 'PLAYER_TURN') return false;
+    if (this.turnTimeoutNotice || this.isTransitioning) return false;
+    if (this.multiplayerConfig && this.isTimerRunning && this.turnTimerTotal > 0 && !this.isPaused) {
+      if (performance.now() >= this.turnDeadlineMs) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  public dismissTurnTransition(): void {
+    if (!this.isTransitioning) return;
+    this.isTransitioning = false;
+    this.transitionTimer = 0;
+    this.startActivePlayerTurn();
   }
 
   public recordPenContact(penA: string, penB: string, speed: number): void {
@@ -105,7 +150,11 @@ export class TurnManager {
   /**
    * Starts a new match. Can be single-player (vs AI / Practice) or local hot-seat multiplayer.
    */
-  public startNewMatch(multiplayerConfig?: MultiplayerMatchConfig): void {
+  public startNewMatch(
+    multiplayerConfig?: MultiplayerMatchConfig,
+    soloPenType: PenTypeId = 'GRIP_MASTER',
+    botPenType: PenTypeId = 'IRON_FORCE'
+  ): void {
     this.state.resetMatchStats();
     this.countdownTimer = COUNTDOWN_SECONDS;
     this.lastCountdownInt = COUNTDOWN_SECONDS;
@@ -121,52 +170,68 @@ export class TurnManager {
     this.transitionTimer = 0;
     this.isTransitioning = false;
     this.winningTeam = null;
+    this.isTimerRunning = false;
 
-    if (multiplayerConfig && multiplayerConfig.mode !== 'VS_AI' && multiplayerConfig.mode !== 'PRACTICE') {
+    const requestedMode: GameMode = multiplayerConfig?.mode ?? 'VS_AI';
+    this.gameMode = requestedMode;
+
+    if (multiplayerConfig && requestedMode !== 'VS_AI' && requestedMode !== 'PRACTICE') {
       // --- MULTIPLAYER SETUP ---
       this.multiplayerConfig = multiplayerConfig;
       this.turnTimerTotal = multiplayerConfig.turnTimerSeconds;
       this.turnTimeRemaining = multiplayerConfig.turnTimerSeconds;
       this.lastTimerSecondInt = Math.ceil(this.turnTimeRemaining);
+      this.lastTimerTenthInt = Math.floor(this.turnTimeRemaining * 10);
 
       this.players = multiplayerConfig.players.map((p) => ({
         id: p.id,
         name: p.name,
         team: p.team,
         penType: p.penType,
+        skinId: p.skinId ?? 'team_default',
         isEliminated: false,
         shotsCount: 0,
         knockoutsCount: 0,
+        skipsCount: 0,
         ability: abilityHudDefaults(p.penType),
       }));
 
-      // Generate turn queue
-      let queue = generateTurnQueue(multiplayerConfig.players);
-      if (multiplayerConfig.startingTeam === 'red') {
-        // If Red starts, rotate until first player is Red
-        const firstRedIdx = queue.findIndex((id) => {
-          const p = this.players.find((pl) => pl.id === id);
-          return p?.team === 'red';
-        });
-        if (firstRedIdx > 0) {
-          queue = [...queue.slice(firstRedIdx), ...queue.slice(0, firstRedIdx)];
-        }
+      // Generate or apply custom turn queue
+      const validIds = new Set(multiplayerConfig.players.map((p) => p.id));
+      let queue: string[];
+      if (
+        multiplayerConfig.customTurnOrder &&
+        multiplayerConfig.customTurnOrder.length === multiplayerConfig.players.length &&
+        multiplayerConfig.customTurnOrder.every((id) => validIds.has(id))
+      ) {
+        queue = [...multiplayerConfig.customTurnOrder];
+      } else {
+        queue = generateTurnQueue(multiplayerConfig.players);
       }
+
+      queue = rotateTurnQueue(
+        queue,
+        multiplayerConfig.players,
+        multiplayerConfig.startingPlayerId,
+        multiplayerConfig.startingTeam
+      );
+
       this.turnQueue = queue;
       this.currentTurnIndex = 0;
-      this.activePlayerId = this.turnQueue[0] || 'blue_1';
+      this.activePlayerId = this.turnQueue[0] || multiplayerConfig.players[0]?.id || 'blue_1';
       this.roundNumber = 1;
-      this.isTimerRunning = false;
 
-      // Spawn pens dynamically
+      // Spawn pens dynamically per team and player radius
       const bluePlayers = this.players.filter((p) => p.team === 'blue');
       const redPlayers = this.players.filter((p) => p.team === 'red');
       const spawnConfigs = this.players.map((p) => {
         const teamTotal = p.team === 'blue' ? bluePlayers.length : redPlayers.length;
-        const teamIdx = p.team === 'blue'
-          ? bluePlayers.findIndex((pl) => pl.id === p.id)
-          : redPlayers.findIndex((pl) => pl.id === p.id);
-        const spawn = computeMultiplayerSpawn(p.team, Math.max(0, teamIdx), teamTotal);
+        const teamIdx =
+          p.team === 'blue'
+            ? bluePlayers.findIndex((pl) => pl.id === p.id)
+            : redPlayers.findIndex((pl) => pl.id === p.id);
+        const penRadius = PEN_SPECS[p.penType].radius;
+        const spawn = computeMultiplayerSpawn(p.team, Math.max(0, teamIdx), teamTotal, penRadius);
         return {
           id: p.id,
           penType: p.penType,
@@ -180,7 +245,7 @@ export class TurnManager {
       this.updateMultiplayerSnapshot();
       this.state.update({
         matchState: 'COUNTDOWN',
-        gameMode: multiplayerConfig.mode,
+        gameMode: requestedMode,
         activeTurn: this.activePlayerId,
         countdownValue: COUNTDOWN_SECONDS,
         shotStatusText: 'Get ready...',
@@ -190,46 +255,78 @@ export class TurnManager {
         isTurnTimeoutNotice: false,
       });
     } else {
-      // --- SINGLE PLAYER / VS AI SETUP ---
+      // --- SINGLE PLAYER / VS AI / PRACTICE SETUP ---
       this.multiplayerConfig = null;
       this.turnTimerTotal = 0;
       this.turnTimeRemaining = 0;
-      this.isTimerRunning = false;
       this.activePlayerId = 'player';
       this.turnQueue = ['player', 'bot'];
       this.currentTurnIndex = 0;
       this.roundNumber = 1;
       this.players = [];
 
+      // Always rebuild solo/practice bodies cleanly in case previous match was 2v2/3v3
+      this.physics.configurePens([
+        { id: 'player', penType: soloPenType, spawn: PLAYER_SPAWN },
+        { id: 'bot', penType: botPenType, spawn: BOT_SPAWN },
+      ]);
       this.physics.resetPens();
+
       this.state.update({
         matchState: 'COUNTDOWN',
-        gameMode: multiplayerConfig?.mode ?? 'VS_AI',
+        gameMode: requestedMode,
         activeTurn: 'player',
-        countdownValue: COUNTDOWN_SECONDS,
-        shotStatusText: 'Get ready...',
+        countdownValue: requestedMode === 'PRACTICE' ? 0 : COUNTDOWN_SECONDS,
+        shotStatusText:
+          requestedMode === 'PRACTICE' ? 'Practice Freeplay — Aim & strike anytime' : 'Get ready...',
         multiplayer: null,
         turnTimeRemaining: 0,
         turnTimeTotal: 0,
         isTurnTimerRunning: false,
         isTurnTimeoutNotice: false,
       });
+
+      if (requestedMode === 'PRACTICE') {
+        this.countdownTimer = 0;
+        this.beginSinglePlayerTurn('player');
+        return;
+      }
     }
 
     this.events.onCountdownTick(COUNTDOWN_SECONDS);
   }
 
-  public returnToMenu(): void {
-    this.physics.resetPens();
+  public returnToMenu(
+    soloPenType: PenTypeId = 'GRIP_MASTER',
+    botPenType: PenTypeId = 'IRON_FORCE'
+  ): void {
+    const wasMultiplayer = Boolean(this.multiplayerConfig);
+    this.multiplayerConfig = null;
+    this.gameMode = 'VS_AI';
+    this.players = [];
+    this.turnQueue = [];
+    this.activePlayerId = 'player';
+    this.winningTeam = null;
     this.oobTimers = {};
     this.fellNotified = {};
     this.firstFallen = null;
+    this.lastAttacker = {};
     this.isTimerRunning = false;
     this.isTransitioning = false;
+    this.turnTimeoutNotice = false;
+    if (wasMultiplayer) {
+      this.physics.configurePens([
+        { id: 'player', penType: soloPenType, spawn: PLAYER_SPAWN },
+        { id: 'bot', penType: botPenType, spawn: BOT_SPAWN },
+      ]);
+    }
+    this.physics.resetPens();
     this.state.update({
       matchState: 'MENU',
       activeTurn: 'player',
       shotStatusText: 'Ready to play',
+      gameMode: 'VS_AI',
+      multiplayer: null,
       isTurnTimerRunning: false,
       isTurnTimeoutNotice: false,
       edgeWarning: {
@@ -250,6 +347,7 @@ export class TurnManager {
     this.shotTimer = 0;
     this.settleTimer = 0;
     this.isTimerRunning = false; // Stop timer immediately on shot release!
+    this.lastAttacker = {};
 
     // Update player shot stats in multiplayer
     if (this.multiplayerConfig) {
@@ -307,7 +405,7 @@ export class TurnManager {
       this.timeoutNoticeTimer -= dt;
       if (this.timeoutNoticeTimer <= 0) {
         this.turnTimeoutNotice = false;
-        this.state.update({ isTurnTimeoutNotice: false });
+        this.updateMultiplayerSnapshot();
         this.advanceMultiplayerTurnQueue();
       }
       return;
@@ -323,23 +421,29 @@ export class TurnManager {
       return;
     }
 
-    // 4. Live Turn Timer Countdown during PLAYER_TURN
+    // 4. Live Turn Timer Countdown during PLAYER_TURN (Monotonic clock)
     if (snap.matchState === 'PLAYER_TURN' && this.isTimerRunning && !this.isPaused && this.turnTimerTotal > 0) {
-      this.turnTimeRemaining -= dt;
+      const remainingSec = Math.max(0, (this.turnDeadlineMs - performance.now()) / 1000);
+      this.turnTimeRemaining = remainingSec;
 
-      const ceilVal = Math.max(0, Math.ceil(this.turnTimeRemaining));
+      const ceilVal = Math.max(0, Math.ceil(remainingSec));
+      const tenthVal = Math.max(0, Math.floor(remainingSec * 10));
+
       if (ceilVal !== this.lastTimerSecondInt) {
         this.lastTimerSecondInt = ceilVal;
         if (ceilVal <= 5 && ceilVal > 0) {
           this.events.onTimerWarning?.(ceilVal);
         }
+      }
+
+      if (tenthVal !== this.lastTimerTenthInt) {
+        this.lastTimerTenthInt = tenthVal;
         this.state.update({
-          turnTimeRemaining: Math.max(0, this.turnTimeRemaining),
+          turnTimeRemaining: remainingSec,
         });
       }
 
-      // Check for Timeout
-      if (this.turnTimeRemaining <= 0) {
+      if (remainingSec <= 0) {
         this.handleTurnTimeout();
         return;
       }
@@ -366,7 +470,15 @@ export class TurnManager {
     } else if (snap.matchState === 'PLAYER_TURN' || snap.matchState === 'BOT_TURN') {
       // Continuous check in case a pen slowly tilts or rolls off while at rest
       this.checkFallenPens(dt);
-      if (this.firstFallen !== null && !this.multiplayerConfig) {
+      if (this.multiplayerConfig) {
+        const blueAlive = this.players.filter((p) => p.team === 'blue' && !p.isEliminated).length;
+        const redAlive = this.players.filter((p) => p.team === 'red' && !p.isEliminated).length;
+        const activePlayer = this.players.find((p) => p.id === this.activePlayerId);
+        if (blueAlive === 0 || redAlive === 0 || activePlayer?.isEliminated) {
+          this.isTimerRunning = false;
+          this.resolveMultiplayerShot();
+        }
+      } else if (this.firstFallen !== null) {
         this.resolveAfterShot();
       }
     }
@@ -379,13 +491,19 @@ export class TurnManager {
     this.isTimerRunning = false;
     this.turnTimeRemaining = 0;
     this.turnTimeoutNotice = true;
-    this.timeoutNoticeTimer = 1.2; // 1.2s clear visual timeout notification
+    this.timeoutNoticeTimer = 1.15;
 
-    const timedOutPlayer = this.getPlayerDisplayName(this.activePlayerId);
+    const timedOut = this.players.find((p) => p.id === this.activePlayerId);
+    if (timedOut) {
+      timedOut.skipsCount += 1;
+    }
+
+    const timedOutName = this.getPlayerDisplayName(this.activePlayerId);
     this.events.onTurnTimeout?.(this.activePlayerId);
 
+    this.updateMultiplayerSnapshot();
     this.state.update({
-      shotStatusText: `TIME'S UP! ${timedOutPlayer.toUpperCase()}'S TURN SKIPPED`,
+      shotStatusText: `TIME'S UP! ${timedOutName.toUpperCase()}'S TURN SKIPPED`,
       isTurnTimerRunning: false,
       isTurnTimeoutNotice: true,
       turnTimeRemaining: 0,
@@ -397,8 +515,10 @@ export class TurnManager {
    */
   private checkFallenPens(dt: number): void {
     const penIds = this.multiplayerConfig
-      ? this.players.map((p) => p.id)
+      ? this.players.filter((p) => !p.isEliminated).map((p) => p.id)
       : ['player', 'bot'];
+
+    let eliminatedAny = false;
 
     for (const id of penIds) {
       const pose = this.physics.getPose(id);
@@ -421,11 +541,12 @@ export class TurnManager {
           this.firstFallen = id;
         }
 
-        // Attribution: credit knockout to attacker
+        // Attribution: credit knockout to the opponent who hit them
         const attackerId = this.lastAttacker[id];
         if (attackerId && attackerId !== id) {
           const attackerPlayer = this.players.find((p) => p.id === attackerId);
-          if (attackerPlayer) {
+          const victimPlayer = this.players.find((p) => p.id === id);
+          if (attackerPlayer && (!victimPlayer || attackerPlayer.team !== victimPlayer.team)) {
             attackerPlayer.knockoutsCount += 1;
           }
         }
@@ -435,11 +556,16 @@ export class TurnManager {
           const targetPlayer = this.players.find((p) => p.id === id);
           if (targetPlayer) {
             targetPlayer.isEliminated = true;
+            eliminatedAny = true;
           }
         }
 
         this.events.onPenFell(id);
       }
+    }
+
+    if (eliminatedAny) {
+      this.updateMultiplayerSnapshot();
     }
 
     // Update edge warning indicator for HUD
@@ -505,6 +631,10 @@ export class TurnManager {
 
   private advanceMultiplayerTurnQueue(): void {
     const totalSlots = this.turnQueue.length;
+    if (totalSlots === 0) {
+      this.resolveMultiplayerShot();
+      return;
+    }
     let nextIdx = (this.currentTurnIndex + 1) % totalSlots;
     let foundEligible = false;
 
@@ -519,7 +649,6 @@ export class TurnManager {
     }
 
     if (!foundEligible) {
-      // Safety fallback: if no eligible player, check remaining survivors
       this.resolveMultiplayerShot();
       return;
     }
@@ -540,7 +669,7 @@ export class TurnManager {
     this.firstFallen = null;
     this.turnTimeoutNotice = false;
     this.isTransitioning = true;
-    this.transitionTimer = 1.0; // 1.0s transition animation
+    this.transitionTimer = 1.05; // Brief, crisp turn transition animation
 
     this.events.onTurnTransition?.(player);
 
@@ -563,7 +692,15 @@ export class TurnManager {
 
     this.turnTimeRemaining = this.turnTimerTotal;
     this.lastTimerSecondInt = Math.ceil(this.turnTimeRemaining);
+    this.lastTimerTenthInt = Math.floor(this.turnTimeRemaining * 10);
     this.isTimerRunning = this.turnTimerTotal > 0;
+    if (this.isTimerRunning) {
+      this.pausedRemainingMs = this.turnTimerTotal * 1000;
+      this.turnDeadlineMs = performance.now() + this.pausedRemainingMs;
+    } else {
+      this.turnDeadlineMs = 0;
+      this.pausedRemainingMs = 0;
+    }
 
     const teamLabel = player.team === 'blue' ? 'Team Blue' : 'Team Red';
     this.state.update({
@@ -583,6 +720,7 @@ export class TurnManager {
     this.winningTeam = winner;
     this.isTimerRunning = false;
     this.isTransitioning = false;
+    this.turnTimeoutNotice = false;
     this.updateMultiplayerSnapshot();
 
     const winnerId = winner === 'blue' ? 'player' : 'bot';
@@ -600,6 +738,23 @@ export class TurnManager {
   private resolveSinglePlayerShot(): void {
     const pFell = this.fellNotified.player;
     const bFell = this.fellNotified.bot;
+
+    // Practice Mode: infinite freeplay — respawn fallen pens back onto the desk and keep going!
+    if (this.gameMode === 'PRACTICE') {
+      if (pFell) {
+        this.physics.respawnPen('player');
+        this.fellNotified.player = false;
+        this.oobTimers.player = 0;
+      }
+      if (bFell) {
+        this.physics.respawnPen('bot');
+        this.fellNotified.bot = false;
+        this.oobTimers.bot = 0;
+      }
+      this.firstFallen = null;
+      this.beginSinglePlayerTurn('player');
+      return;
+    }
 
     if (pFell || bFell) {
       let winner: PlayerId;
@@ -642,7 +797,10 @@ export class TurnManager {
       this.state.update({
         matchState: 'PLAYER_TURN',
         activeTurn: 'player',
-        shotStatusText: 'Your turn — grab & pull your blue pen',
+        shotStatusText:
+          this.gameMode === 'PRACTICE'
+            ? 'Practice Mode — Grab & pull to test shots anytime'
+            : 'Your turn — grab & pull your blue pen',
       });
       this.events.onStartPlayerTurn('player');
     } else {
@@ -667,6 +825,12 @@ export class TurnManager {
     if (!this.multiplayerConfig) return;
     const blueCount = this.players.filter((p) => p.team === 'blue' && !p.isEliminated).length;
     const redCount = this.players.filter((p) => p.team === 'red' && !p.isEliminated).length;
+    const blueKnockouts = this.players
+      .filter((p) => p.team === 'blue')
+      .reduce((sum, p) => sum + p.knockoutsCount, 0);
+    const redKnockouts = this.players
+      .filter((p) => p.team === 'red')
+      .reduce((sum, p) => sum + p.knockoutsCount, 0);
     const activePlayer = this.players.find((p) => p.id === this.activePlayerId) ?? null;
 
     const snap: MultiplayerMatchSnapshot = {
@@ -684,6 +848,8 @@ export class TurnManager {
       transitionPlayer: this.isTransitioning ? activePlayer : null,
       blueScore: blueCount,
       redScore: redCount,
+      blueKnockouts,
+      redKnockouts,
     };
 
     this.state.update({

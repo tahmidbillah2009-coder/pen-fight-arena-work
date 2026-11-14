@@ -34,9 +34,9 @@ export function getPowerZone(powerRatio: number): PowerZoneSpec {
  * player input, AI evaluation, trajectory preview, and simulation.
  */
 export const PHYSICS_BALANCE = {
-  // Larger strategic arena (15.6 x 10.0 vs original 14.0 x 9.0 — +24% desk area)
-  arenaWidth: 15.6,
-  arenaDepth: 10.0,
+  // Larger tabletop arena (19.5 x 12.5 vs 15.6 x 10.0 — +25% width & depth, preserved 1.56:1 ratio)
+  arenaWidth: 19.5,
+  arenaDepth: 12.5,
   tableThickness: 0.5,
   tableTopY: 0.0,
   floorY: -5.4,
@@ -124,9 +124,9 @@ export const PEN_HALF_LENGTH = PEN_LENGTH * 0.5;
 export const PEN_RADIUS = PEN_SPECS[STARTER_PEN].radius;
 export const PEN_REST_Y = PEN_RADIUS + 0.005;
 
-// Starting spawns positioned strategically in the 15.6 x 10.0 arena
-export const PLAYER_SPAWN = { x: -3.8, y: PEN_REST_Y, z: 0.45, yaw: 0.18 };
-export const BOT_SPAWN = { x: 3.8, y: PEN_REST_Y, z: -0.45, yaw: Math.PI - 0.18 };
+// Starting spawns positioned proportionally in the 19.5 x 12.5 arena
+export const PLAYER_SPAWN = { x: -4.75, y: PEN_REST_Y, z: 0.56, yaw: 0.18 };
+export const BOT_SPAWN = { x: 4.75, y: PEN_REST_Y, z: -0.56, yaw: Math.PI - 0.18 };
 
 // Derived physics exports
 export const PHYSICS_FIXED_DT = PHYSICS_BALANCE.fixedDt;

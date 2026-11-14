@@ -9,6 +9,7 @@ import {
   TABLE_HALF_D,
   TABLE_HALF_W,
 } from '../utils/Constants';
+import { getPenSkinSpec, PenSkinId } from './MultiplayerTypes';
 import { PlayerId } from './GameState';
 
 const _zAxisTmp = new THREE.Vector3();
@@ -117,6 +118,7 @@ export class PenModel {
   public visualMeshes: THREE.Object3D[] = [];
   public penType: PenTypeId;
   public team: 'blue' | 'red';
+  public skinId: PenSkinId;
 
   /**
    * Removable rear cap, kept as its own sub-group so a future removal feature can detach,
@@ -137,12 +139,14 @@ export class PenModel {
     id: PlayerId,
     maxAnisotropy: number,
     penType: PenTypeId = 'GRIP_MASTER',
-    team: 'blue' | 'red' = (id === 'bot' || id.startsWith('red') ? 'red' : 'blue')
+    team: 'blue' | 'red' = (id === 'bot' || id.startsWith('red') ? 'red' : 'blue'),
+    skinId: PenSkinId = 'team_default'
   ) {
     this.id = id;
     this.maxAnisotropy = maxAnisotropy;
     this.penType = penType;
     this.team = team;
+    this.skinId = skinId;
 
     // Contact shadow plane positioned directly beneath pen on the tabletop
     _sharedTextureUsers++;
@@ -165,6 +169,15 @@ export class PenModel {
   public setPenType(penType: PenTypeId): void {
     if (this.penType === penType) return;
     this.penType = penType;
+    this.clearModelParts();
+    this.buildGeometry(penType);
+  }
+
+  public setAppearance(penType: PenTypeId, team: 'blue' | 'red', skinId: PenSkinId): void {
+    if (this.penType === penType && this.team === team && this.skinId === skinId) return;
+    this.penType = penType;
+    this.team = team;
+    this.skinId = skinId;
     this.clearModelParts();
     this.buildGeometry(penType);
   }
@@ -202,12 +215,33 @@ export class PenModel {
     this.baseShadowWidth = (radius * 2) / widthFraction;
     this.contactShadow.scale.set(this.baseShadowWidth, 1, this.baseShadowLength);
 
-    const primaryColor = isBlueTeam ? spec.primaryColorHex : BOT_COLOR_HEX;
-    const accentColor = isBlueTeam ? spec.accentColorHex : BOT_ACCENT_HEX;
-    const gripColor = isBlueTeam ? spec.gripColorHex : 0x181a20;
+    const skinSpec = getPenSkinSpec(this.skinId);
+    const hasCustomSkin = skinSpec.id !== 'team_default' && skinSpec.primaryColorHex !== undefined;
+    const primaryColor = hasCustomSkin
+      ? skinSpec.primaryColorHex!
+      : isBlueTeam
+        ? spec.primaryColorHex
+        : BOT_COLOR_HEX;
+    const accentColor = hasCustomSkin
+      ? (skinSpec.accentColorHex ?? (isBlueTeam ? spec.accentColorHex : BOT_ACCENT_HEX))
+      : isBlueTeam
+        ? spec.accentColorHex
+        : BOT_ACCENT_HEX;
+    const gripColor = hasCustomSkin
+      ? (skinSpec.gripColorHex ?? 0x181a20)
+      : isBlueTeam
+        ? spec.gripColorHex
+        : 0x181a20;
 
-    // 1. Barrel texture with subtle racing stripe & precision rings
-    const barrelTex = this.createBarrelTexture(primaryColor, accentColor, this.maxAnisotropy);
+    // 1. Barrel texture with subtle racing stripe & precision team-identity band
+    const teamStripeHex = isBlueTeam ? 0x38bdf8 : 0xf43f5e;
+    const barrelTex = this.createBarrelTexture(
+      primaryColor,
+      accentColor,
+      teamStripeHex,
+      hasCustomSkin,
+      this.maxAnisotropy
+    );
     const barrelMat = new THREE.MeshStandardMaterial({
       map: barrelTex,
       roughness: spec.roughness,
@@ -588,6 +622,8 @@ export class PenModel {
   private createBarrelTexture(
     primaryHex: number,
     accentHex: number,
+    teamStripeHex: number,
+    showTeamBand: boolean,
     maxAnisotropy: number
   ): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
@@ -597,6 +633,7 @@ export class PenModel {
 
     const baseColor = '#' + new THREE.Color(primaryHex).getHexString();
     const accentColor = '#' + new THREE.Color(accentHex).getHexString();
+    const teamColor = '#' + new THREE.Color(teamStripeHex).getHexString();
 
     ctx.fillStyle = baseColor;
     ctx.fillRect(0, 0, 512, 512);
@@ -615,6 +652,11 @@ export class PenModel {
     ctx.globalAlpha = 0.85;
     ctx.fillRect(0, 90, 512, 16);
     ctx.fillRect(0, 120, 512, 6);
+    if (showTeamBand) {
+      ctx.fillStyle = teamColor;
+      ctx.globalAlpha = 0.95;
+      ctx.fillRect(0, 390, 512, 24);
+    }
     ctx.globalAlpha = 1;
 
     const tex = new THREE.CanvasTexture(canvas);

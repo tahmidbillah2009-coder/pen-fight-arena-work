@@ -103,7 +103,7 @@ function closestPointsBetweenSegments(
 
 export class CollisionManager {
   private readonly handleMap = new Map<number, ColliderSurface>();
-  private lastPenPenTime = 0;
+  private readonly lastPenPenTimes = new Map<string, number>();
   private lastTableTime: Record<string, number> = {};
 
   public registerCollider(handle: number, surface: ColliderSurface): void {
@@ -120,6 +120,8 @@ export class CollisionManager {
 
   public clear(): void {
     this.handleMap.clear();
+    this.lastPenPenTimes.clear();
+    this.lastTableTime = {};
   }
 
   public getSurface(handle: number): ColliderSurface | undefined {
@@ -141,7 +143,9 @@ export class CollisionManager {
 
     // Pen-to-pen collision between any two different pens
     if (s1 !== 'table' && s1 !== 'floor' && s2 !== 'table' && s2 !== 'floor' && s1 !== s2) {
-      if (nowMs - this.lastPenPenTime < 75) return;
+      const pairKey = s1 < s2 ? `${s1}|${s2}` : `${s2}|${s1}`;
+      const prevPairTime = this.lastPenPenTimes.get(pairKey) ?? 0;
+      if (nowMs - prevPairTime < 75) return;
       const p = getPenKinematics(s1);
       const b = getPenKinematics(s2);
       if (!p || !b) return;
@@ -178,7 +182,7 @@ export class CollisionManager {
 
       const impactSpeed = _vA.sub(_vB).length();
       if (impactSpeed > 0.6) {
-        this.lastPenPenTime = nowMs;
+        this.lastPenPenTimes.set(pairKey, nowMs);
         callbacks.onPenPenImpact(_impactPt.clone(), _impactNormal.clone(), impactSpeed, s1, s2);
       }
       return;

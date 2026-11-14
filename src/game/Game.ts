@@ -183,13 +183,25 @@ export class PenFightGame {
           4.0
         );
       },
-      onTurnTimeout: (_playerId: string) => {
+      onTurnTimeout: (timedOutId: string) => {
         this.dragController.cancelDrag();
-        this.audio.playAbilityReady();
+        this.abilitySystem.disarm(timedOutId);
+        this.applyAbilityPreview();
+        this.audio.playTimeExpired();
+      },
+      onTurnTransition: (player) => {
+        this.audio.playTurnSwitch();
+        for (const [id, model] of this.penModels.entries()) {
+          if (id === player.id) {
+            model.setHighlight(0.32);
+          } else {
+            model.setHighlight(0);
+          }
+        }
       },
       onTimerWarning: (secondsRemaining: number) => {
-        if (secondsRemaining <= 3 && secondsRemaining > 0) {
-          this.audio.playCountdownTick(false);
+        if (secondsRemaining <= 5 && secondsRemaining > 0) {
+          this.audio.playTimerWarning(secondsRemaining <= 3);
         }
       },
       onMatchOver: (winner: PlayerId) => {
@@ -213,8 +225,13 @@ export class PenFightGame {
       {
         canDrag: () => {
           const snap = this.state.getSnapshot();
-          return snap.matchState === 'PLAYER_TURN' && !snap.isTurnTimeoutNotice;
+          return (
+            snap.matchState === 'PLAYER_TURN' &&
+            !snap.isTurnTimeoutNotice &&
+            !snap.multiplayer?.transitionPlayer
+          );
         },
+        canAcceptShot: () => this.turnManager.canAcceptShot(),
         onGrabStart: () => {
           this.audio.unlock();
           this.audio.playGrab();
@@ -326,12 +343,18 @@ export class PenFightGame {
     if (multiplayerConfig && multiplayerConfig.mode !== 'VS_AI' && multiplayerConfig.mode !== 'PRACTICE') {
       for (const p of multiplayerConfig.players) {
         this.penTypes.set(p.id, p.penType);
-        const model = new PenModel(p.id, this.sceneManager.maxAnisotropy, p.penType, p.team);
+        const model = new PenModel(
+          p.id,
+          this.sceneManager.maxAnisotropy,
+          p.penType,
+          p.team,
+          p.skinId ?? 'team_default'
+        );
         this.sceneManager.scene.add(model.group, model.contactShadow);
         this.penModels.set(p.id, model);
       }
-      this.abilitySystem.reset(multiplayerConfig.players.map((p) => p.id));
       this.turnManager.startNewMatch(multiplayerConfig);
+      this.abilitySystem.reset(multiplayerConfig.players.map((p) => p.id));
     } else {
       this.penTypes.set('player', this.settings.playerPenType);
       this.penTypes.set('bot', BOT_PEN_TYPE);
@@ -341,11 +364,15 @@ export class PenFightGame {
       this.sceneManager.scene.add(pModel.group, pModel.contactShadow, bModel.group, bModel.contactShadow);
       this.penModels.set('player', pModel);
       this.penModels.set('bot', bModel);
+      this.playerPen = pModel;
+      this.botPen = bModel;
 
-      this.physics.setPenType('player', this.settings.playerPenType);
-      this.physics.setPenType('bot', BOT_PEN_TYPE);
+      this.turnManager.startNewMatch(
+        multiplayerConfig,
+        this.settings.playerPenType,
+        BOT_PEN_TYPE
+      );
       this.abilitySystem.reset(['player', 'bot']);
-      this.turnManager.startNewMatch();
     }
 
     const firstId = this.turnManager.getActivePlayerId();
@@ -373,6 +400,11 @@ export class PenFightGame {
     }
   }
 
+  public dismissTurnTransition(): void {
+    if (!this.initialized) return;
+    this.turnManager?.dismissTurnTransition();
+  }
+
   /**
    * HUD button / keyboard entry point for the player's Special Shot.
    *
@@ -383,6 +415,7 @@ export class PenFightGame {
    */
   public activatePlayerAbility(): boolean {
     if (!this.initialized) return false;
+    if (!this.turnManager.canAcceptShot()) return false;
     const activeId = this.turnManager?.getActivePlayerId() ?? 'player';
     if (this.abilitySystem.isArmed(activeId)) {
       return this.abilitySystem.activate(activeId);
@@ -408,7 +441,12 @@ export class PenFightGame {
   private canActivateAbility(id: PlayerId): boolean {
     const snap = this.state.getSnapshot();
     if (this.turnManager?.getMultiplayerConfig()) {
-      return snap.matchState === 'PLAYER_TURN' && id === this.turnManager.getActivePlayerId();
+      return (
+        snap.matchState === 'PLAYER_TURN' &&
+        !snap.multiplayer?.transitionPlayer &&
+        !snap.isTurnTimeoutNotice &&
+        id === this.turnManager.getActivePlayerId()
+      );
     }
     return id === 'player' ? snap.matchState === 'PLAYER_TURN' : snap.matchState === 'BOT_TURN';
   }
@@ -486,9 +524,35 @@ export class PenFightGame {
 
   public returnToMenu(): void {
     if (!this.initialized) return;
+    const wasMultiplayer = Boolean(this.turnManager?.getMultiplayerConfig());
+    this.currentMatchConfig = null;
     this.dragController.cancelDrag();
     this.aiController.cancel();
-    this.abilitySystem.reset();
+
+    if (wasMultiplayer || !this.penModels.has('player') || this.penModels.size > 2) {
+      for (const model of this.penModels.values()) {
+        this.sceneManager.scene.remove(model.group);
+        this.sceneManager.scene.remove(model.contactShadow);
+        model.dispose();
+      }
+      this.penModels.clear();
+      this.penTypes.clear();
+
+      this.penTypes.set('player', this.settings.playerPenType);
+      this.penTypes.set('bot', BOT_PEN_TYPE);
+
+      const pModel = new PenModel('player', this.sceneManager.maxAnisotropy, this.settings.playerPenType, 'blue');
+      const bModel = new PenModel('bot', this.sceneManager.maxAnisotropy, BOT_PEN_TYPE, 'red');
+      this.sceneManager.scene.add(pModel.group, pModel.contactShadow, bModel.group, bModel.contactShadow);
+      this.penModels.set('player', pModel);
+      this.penModels.set('bot', bModel);
+      this.playerPen = pModel;
+      this.botPen = bModel;
+      this.dragController.setActivePen('player', pModel);
+    }
+
+    this.turnManager.returnToMenu(this.settings.playerPenType, BOT_PEN_TYPE);
+    this.abilitySystem.reset(['player', 'bot']);
     this.trailSystem.reset();
     this.aimController.setAbilityPreview(null);
     this.abilityPreviewActive = false;
@@ -496,7 +560,8 @@ export class PenFightGame {
       model.setHighlight(0);
     }
     this.cameraManager.setMenuMode(true);
-    this.turnManager.returnToMenu();
+    this.sceneManager.requestShadowUpdate();
+    this.syncVisualTransforms();
   }
 
   public applySettings(next: GameSettings): void {
@@ -510,14 +575,16 @@ export class PenFightGame {
     if (this.aimController) {
       this.aimController.setTrajectoryVisible(next.showTrajectory);
     }
-    if (penChanged && this.physics && this.playerPen) {
+    const isMultiplayer = Boolean(this.turnManager?.getMultiplayerConfig());
+    if (penChanged && this.physics && this.playerPen && !isMultiplayer) {
+      this.penTypes.set('player', next.playerPenType);
       this.dragController?.cancelDrag();
       this.abilitySystem?.disarm('player');
       this.physics.setPenType('player', next.playerPenType);
       this.playerPen.setPenType(next.playerPenType);
       // Rebuild the ability state: re-applies the new pen's passive to the freshly created rigid
       // body and clears any stale cooldown / active window carried over from the previous pen.
-      this.abilitySystem?.reset();
+      this.abilitySystem?.reset(['player', 'bot']);
       this.applyAbilityPreview();
       this.state.updateAbility('player', this.abilitySystem.getState('player'));
       this.syncVisualTransforms();
@@ -671,13 +738,23 @@ export class PenFightGame {
     // One physics poll per frame: the poses read here are reused for the edge-warning visuals.
     const poses = this.syncVisualTransforms();
     const snap = this.state.getSnapshot();
-    this.tableEnv.updateEdgeWarning(
-      poses.player.pos,
-      poses.bot.pos,
-      snap.edgeWarning.player,
-      snap.edgeWarning.bot,
-      now
-    );
+    if (snap.multiplayer) {
+      const mpPens = snap.multiplayer.players
+        .filter((p) => !p.isEliminated)
+        .map((p) => ({
+          pos: this.physics.getPose(p.id).pos,
+          level: this.physics.getEdgeProximity(p.id).level,
+        }));
+      this.tableEnv.updateEdgeWarningPens(mpPens, now);
+    } else {
+      this.tableEnv.updateEdgeWarning(
+        poses.player.pos,
+        poses.bot.pos,
+        snap.edgeWarning.player,
+        snap.edgeWarning.bot,
+        now
+      );
+    }
 
     const dragView = this.dragController.getStateView();
     this.aimController.update(dragView, this.physics);

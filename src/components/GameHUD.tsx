@@ -211,12 +211,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     );
   }
 
+  const isPractice = snapshot.gameMode === 'PRACTICE';
   const isPlayerActive =
     snapshot.matchState === 'PLAYER_TURN' ||
     (snapshot.matchState === 'SHOT_IN_PROGRESS' && snapshot.activeTurn === 'player');
   const isBotActive =
-    snapshot.matchState === 'BOT_TURN' ||
-    (snapshot.matchState === 'SHOT_IN_PROGRESS' && snapshot.activeTurn === 'bot');
+    !isPractice &&
+    (snapshot.matchState === 'BOT_TURN' ||
+      (snapshot.matchState === 'SHOT_IN_PROGRESS' && snapshot.activeTurn === 'bot'));
 
   const diffLabel = difficulty.charAt(0) + difficulty.slice(1).toLowerCase();
 
@@ -259,10 +261,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 <div className="flex items-center justify-end gap-1.5 text-xs font-semibold text-white sm:gap-2 sm:text-sm">
                   <span className="font-mono-num text-rose-300">{snapshot.losses}W</span>
                   <span aria-hidden="true" className="text-slate-500">·</span>
-                  <span className="whitespace-nowrap">Bot</span>
+                  <span className="whitespace-nowrap">{isPractice ? 'Target' : 'Bot'}</span>
                 </div>
                 <div className="text-[9px] text-slate-400 sm:text-[11px]">
-                  {snapshot.matchState === 'BOT_TURN' ? 'Aiming...' : `${diffLabel} AI`}
+                  {isPractice
+                    ? 'Practice Freeplay'
+                    : snapshot.matchState === 'BOT_TURN'
+                      ? 'Aiming...'
+                      : `${diffLabel} AI`}
                 </div>
               </div>
               <span className="h-5 w-1.5 rounded-sm bg-rose-500 sm:h-7 sm:w-2" aria-hidden="true" />
@@ -383,7 +389,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
                 {snapshot.edgeWarning.bot === 'DANGER' && (
                   <div className="flex items-center gap-1 rounded-lg border border-emerald-400/60 bg-emerald-950/90 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-200 shadow-md">
-                    <span>Bot Near Edge</span>
+                    <span>{isPractice ? 'Target Near Edge' : 'Bot Near Edge'}</span>
                   </div>
                 )}
               </div>
@@ -421,7 +427,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               {snapshot.countdownValue > 0 ? snapshot.countdownValue : 'FIGHT!'}
             </div>
             <div className="mt-1 text-xs font-medium text-slate-300">
-              Knock the crimson pen off the desk
+              {isPractice
+                ? 'Practice Freeplay — Test angles, spins & Special Shots'
+                : 'Knock the crimson pen off the desk'}
             </div>
           </div>
         </div>

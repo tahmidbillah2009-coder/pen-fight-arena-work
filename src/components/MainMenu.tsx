@@ -126,13 +126,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 PEN FIGHT ARENA
               </h1>
               <p className="text-[11px] font-medium text-slate-400 sm:text-xs">
-                Tabletop Physics Duel · 1v1 vs AI
+                Tabletop Physics Arena · Solo &amp; Local Multiplayer
               </p>
             </div>
           </div>
 
           <p className="mb-4 text-xs leading-relaxed text-slate-300 sm:mb-5 sm:text-sm">
-            Grab any point on your blue pen, pull back to flex and aim, and release to knock the crimson pen off the school desk.
+            Grab any point on your pen, pull back to flex and aim, and release to knock opposing pens off the wooden school desk.
           </p>
 
           {/* Equipped Pen / Collection Entry — opens the full 3D Pen Selector */}

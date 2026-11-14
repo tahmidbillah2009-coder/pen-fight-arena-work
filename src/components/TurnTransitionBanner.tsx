@@ -1,6 +1,6 @@
 import React from 'react';
-import { PenTool, Swords, Zap } from 'lucide-react';
-import { MultiplayerPlayerState } from '../game/MultiplayerTypes';
+import { PenTool, Zap } from 'lucide-react';
+import { getPenSkinSpec, MultiplayerPlayerState } from '../game/MultiplayerTypes';
 import { PEN_SPECS, RARITY_COLORS } from '../utils/Constants';
 
 interface TurnTransitionBannerProps {
@@ -17,11 +17,15 @@ export const TurnTransitionBanner: React.FC<TurnTransitionBannerProps> = ({
   const isBlue = player.team === 'blue';
   const spec = PEN_SPECS[player.penType];
   const rarity = RARITY_COLORS[spec.rarity];
+  const skinSpec = getPenSkinSpec(player.skinId);
 
   return (
     <div
       onClick={onDismiss}
-      className="pointer-events-auto fixed inset-0 z-35 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-opacity cursor-pointer select-none"
+      role="button"
+      tabIndex={0}
+      aria-label={`${player.name}'s turn, tap or press Space to aim`}
+      className="pointer-events-auto fixed inset-0 z-35 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm transition-opacity cursor-pointer select-none"
     >
       <div
         className={`relative flex w-full max-w-md flex-col items-center rounded-2xl border p-6 text-center shadow-2xl transition-all animate-modal-in ${
@@ -52,10 +56,13 @@ export const TurnTransitionBanner: React.FC<TurnTransitionBannerProps> = ({
 
         {/* Pen & Abilities Card */}
         <div className="w-full rounded-xl border border-white/10 bg-black/40 p-3.5 text-left space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-white">{spec.label}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-white truncate">
+              {spec.label}
+              {skinSpec.id !== 'team_default' ? ` · ${skinSpec.label}` : ''}
+            </span>
             <span
-              className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${rarity.bg} ${rarity.text}`}
+              className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0 ${rarity.bg} ${rarity.text}`}
             >
               {spec.rarity}
             </span>
@@ -74,7 +81,7 @@ export const TurnTransitionBanner: React.FC<TurnTransitionBannerProps> = ({
         </div>
 
         <div className="mt-4 text-[10px] text-slate-400">
-          Tap anywhere or press Space to aim now
+          Tap anywhere or press Space to aim immediately
         </div>
       </div>
     </div>

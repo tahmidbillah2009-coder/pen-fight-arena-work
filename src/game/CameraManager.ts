@@ -4,10 +4,10 @@ import { TABLE_HALF_D, TABLE_HALF_W } from '../utils/Constants';
 export class CameraManager {
   public readonly camera: THREE.PerspectiveCamera;
 
-  private readonly baseLookAt = new THREE.Vector3(0, -0.32, 0.55);
-  private readonly targetPosition = new THREE.Vector3(0, 14.5, 13.5);
-  private readonly currentPosition = new THREE.Vector3(0, 14.5, 13.5);
-  private readonly currentLookAt = new THREE.Vector3(0, -0.32, 0.55);
+  private readonly baseLookAt = new THREE.Vector3(0, -0.32, 0.65);
+  private readonly targetPosition = new THREE.Vector3(0, 18.0, 17.5);
+  private readonly currentPosition = new THREE.Vector3(0, 18.0, 17.5);
+  private readonly currentLookAt = new THREE.Vector3(0, -0.32, 0.65);
 
   private shakeIntensity = 0;
   private menuOrbitTime = 0;

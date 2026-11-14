@@ -245,10 +245,11 @@ export class PhysicsManager {
 
   public setPenType(id: PlayerId, penType: PenTypeId): void {
     const nextSpec = PEN_SPECS[penType];
+    const oldLive = this.bodies[id];
+    if (!oldLive || !this.penSpecs[id]) return;
     if (this.penSpecs[id].id === nextSpec.id) return;
     this.penSpecs[id] = nextSpec;
 
-    const oldLive = this.bodies[id];
     const t = oldLive.translation();
     const r = oldLive.rotation();
     this.collisions.unregisterSurface(id);
@@ -600,6 +601,11 @@ export class PhysicsManager {
     this.accumulator = 0;
   }
 
+  public respawnPen(id: PlayerId): void {
+    const spawn = this.penSpawns[id] ?? (id === 'player' ? PLAYER_SPAWN : BOT_SPAWN);
+    this.resetSinglePen(id, spawn);
+  }
+
   private resetSinglePen(
     id: PlayerId,
     spawn: { x: number; y: number; z: number; yaw: number }
@@ -876,8 +882,15 @@ export class PhysicsManager {
       }
     }
 
-    const pPred = this.predBodies[shooterId] ?? this.predBodies.player;
-    const bPred = this.predBodies.bot;
+    const pPred = this.predBodies[shooterId] ?? Object.values(this.predBodies)[0];
+    if (!pPred) {
+      return {
+        points: [],
+        collisionPoint: null,
+        landingPoint: { x: 0, y: 0.05, z: 0, isOffTable: false },
+        botDeflectEnd: null,
+      };
+    }
 
     if (!params.preserveOnly) {
       const pPos = pPred.translation();
@@ -903,8 +916,8 @@ export class PhysicsManager {
 
     const points: PredictedTrajectoryPoint[] = [];
     let collisionPoint: { x: number; y: number; z: number } | null = null;
-    const pHandles = this.predColliderHandles.player;
-    const bHandles = this.predColliderHandles.bot;
+    let hitTargetId: string | null = null;
+    const shooterHandles = this.predColliderHandles[shooterId] ?? new Set<number>();
     const predDt = 1 / 60;
 
     let finalPos = pPred.translation();
@@ -912,23 +925,32 @@ export class PhysicsManager {
 
     for (let stepIdx = 1; stepIdx <= steps; stepIdx++) {
       this.predWorld.step(this.predEventQueue);
-      this.applyRollingAndStiction(pPred, predDt);
-      this.applyRollingAndStiction(bPred, predDt);
-      this.guardCollisionEnergySpike(pPred);
-      this.guardCollisionEnergySpike(bPred);
+      for (const b of Object.values(this.predBodies)) {
+        this.applyRollingAndStiction(b, predDt);
+        this.guardCollisionEnergySpike(b);
+      }
 
       this.predEventQueue.drainCollisionEvents((h1, h2, started) => {
         if (!started || collisionPoint) return;
-        const isPenPen =
-          (pHandles.has(h1) && bHandles.has(h2)) || (pHandles.has(h2) && bHandles.has(h1));
-        if (isPenPen) {
-          const pt = pPred.translation();
-          const bt = bPred.translation();
-          collisionPoint = {
-            x: (pt.x + bt.x) * 0.5,
-            y: Math.max(0.08, (pt.y + bt.y) * 0.5),
-            z: (pt.z + bt.z) * 0.5,
-          };
+        const shooterIsH1 = shooterHandles.has(h1);
+        const shooterIsH2 = shooterHandles.has(h2);
+        if (!shooterIsH1 && !shooterIsH2) return;
+        const otherHandle = shooterIsH1 ? h2 : h1;
+        for (const [otherId, handles] of Object.entries(this.predColliderHandles)) {
+          if (otherId === shooterId) continue;
+          if (handles.has(otherHandle)) {
+            const otherPred = this.predBodies[otherId];
+            if (!otherPred) break;
+            hitTargetId = otherId;
+            const pt = pPred.translation();
+            const bt = otherPred.translation();
+            collisionPoint = {
+              x: (pt.x + bt.x) * 0.5,
+              y: Math.max(0.08, (pt.y + bt.y) * 0.5),
+              z: (pt.z + bt.z) * 0.5,
+            };
+            break;
+          }
         }
       });
 
@@ -966,7 +988,8 @@ export class PhysicsManager {
       }
     }
 
-    const botEnd = bPred.translation();
+    const hitTargetBody = hitTargetId ? this.predBodies[hitTargetId] : undefined;
+    const hitEnd = hitTargetBody ? hitTargetBody.translation() : null;
     const isOffTable =
       hitFloor ||
       finalPos.y < OOB_Y_THRESHOLD ||
@@ -982,8 +1005,8 @@ export class PhysicsManager {
         z: finalPos.z,
         isOffTable,
       },
-      botDeflectEnd: collisionPoint
-        ? { x: botEnd.x, y: Math.max(FLOOR_Y + 0.05, botEnd.y), z: botEnd.z }
+      botDeflectEnd: collisionPoint && hitEnd
+        ? { x: hitEnd.x, y: Math.max(FLOOR_Y + 0.05, hitEnd.y), z: hitEnd.z }
         : null,
     };
   }
@@ -1014,14 +1037,21 @@ export class PhysicsManager {
       }
     }
 
-    const pPred = this.predBodies[casterId] ?? this.predBodies.player;
-    const bPred = this.predBodies.bot;
+    const pPred = this.predBodies[casterId] ?? Object.values(this.predBodies)[0];
+    if (!pPred) {
+      return {
+        points: [],
+        collisionPoint: null,
+        landingPoint: { x: 0, y: 0.05, z: 0, isOffTable: false },
+        botDeflectEnd: null,
+      };
+    }
     this.predEventQueue.drainCollisionEvents(() => {});
 
     const points: PredictedTrajectoryPoint[] = [];
     let collisionPoint: { x: number; y: number; z: number } | null = null;
-    const pHandles = this.predColliderHandles.player;
-    const bHandles = this.predColliderHandles.bot;
+    let hitTargetId: string | null = null;
+    const casterHandles = this.predColliderHandles[casterId] ?? new Set<number>();
 
     let finalPos = pPred.translation();
     let hitFloor = false;
@@ -1035,23 +1065,32 @@ export class PhysicsManager {
       }
 
       this.predWorld.step(this.predEventQueue);
-      this.applyRollingAndStiction(pPred, predDt);
-      this.applyRollingAndStiction(bPred, predDt);
-      this.guardCollisionEnergySpike(pPred);
-      this.guardCollisionEnergySpike(bPred);
+      for (const b of Object.values(this.predBodies)) {
+        this.applyRollingAndStiction(b, predDt);
+        this.guardCollisionEnergySpike(b);
+      }
 
       this.predEventQueue.drainCollisionEvents((h1, h2, started) => {
         if (!started || collisionPoint) return;
-        const isPenPen =
-          (pHandles.has(h1) && bHandles.has(h2)) || (pHandles.has(h2) && bHandles.has(h1));
-        if (isPenPen) {
-          const pt = pPred.translation();
-          const bt = bPred.translation();
-          collisionPoint = {
-            x: (pt.x + bt.x) * 0.5,
-            y: Math.max(0.08, (pt.y + bt.y) * 0.5),
-            z: (pt.z + bt.z) * 0.5,
-          };
+        const casterIsH1 = casterHandles.has(h1);
+        const casterIsH2 = casterHandles.has(h2);
+        if (!casterIsH1 && !casterIsH2) return;
+        const otherHandle = casterIsH1 ? h2 : h1;
+        for (const [otherId, handles] of Object.entries(this.predColliderHandles)) {
+          if (otherId === casterId) continue;
+          if (handles.has(otherHandle)) {
+            const otherPred = this.predBodies[otherId];
+            if (!otherPred) break;
+            hitTargetId = otherId;
+            const pt = pPred.translation();
+            const bt = otherPred.translation();
+            collisionPoint = {
+              x: (pt.x + bt.x) * 0.5,
+              y: Math.max(0.08, (pt.y + bt.y) * 0.5),
+              z: (pt.z + bt.z) * 0.5,
+            };
+            break;
+          }
         }
       });
 
@@ -1082,7 +1121,8 @@ export class PhysicsManager {
       }
     }
 
-    const botEnd = bPred.translation();
+    const hitTargetBody = hitTargetId ? this.predBodies[hitTargetId] : undefined;
+    const hitEnd = hitTargetBody ? hitTargetBody.translation() : null;
     const isOffTable =
       hitFloor ||
       finalPos.y < OOB_Y_THRESHOLD ||
@@ -1098,8 +1138,8 @@ export class PhysicsManager {
         z: finalPos.z,
         isOffTable,
       },
-      botDeflectEnd: collisionPoint
-        ? { x: botEnd.x, y: Math.max(FLOOR_Y + 0.05, botEnd.y), z: botEnd.z }
+      botDeflectEnd: collisionPoint && hitEnd
+        ? { x: hitEnd.x, y: Math.max(FLOOR_Y + 0.05, hitEnd.y), z: hitEnd.z }
         : null,
     };
   }

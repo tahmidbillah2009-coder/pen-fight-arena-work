@@ -256,8 +256,18 @@ export class GameStateManager {
       activeRemaining: Math.round(state.activeRemaining * 10) / 10,
       cooldownRemaining: Math.round(state.cooldownRemaining * 10) / 10,
     };
-    const current = id === 'player' ? this.snapshot.playerAbility : this.snapshot.botAbility;
+    const mpPlayers = this.snapshot.multiplayer?.players;
+    const mpIdx = mpPlayers ? mpPlayers.findIndex((p) => p.id === id) : -1;
+    const current =
+      mpIdx >= 0 && mpPlayers
+        ? mpPlayers[mpIdx].ability
+        : id === 'player'
+          ? this.snapshot.playerAbility
+          : id === 'bot'
+            ? this.snapshot.botAbility
+            : undefined;
     if (
+      current &&
       current.abilityId === quantised.abilityId &&
       current.isActive === quantised.isActive &&
       current.activeRemaining === quantised.activeRemaining &&
@@ -268,30 +278,30 @@ export class GameStateManager {
     ) {
       return;
     }
+
+    let nextSnap = this.snapshot;
     if (id === 'player') {
-      this.snapshot = { ...this.snapshot, playerAbility: quantised };
+      nextSnap = { ...nextSnap, playerAbility: quantised };
     } else if (id === 'bot') {
-      this.snapshot = { ...this.snapshot, botAbility: quantised };
+      nextSnap = { ...nextSnap, botAbility: quantised };
     }
 
-    if (this.snapshot.multiplayer) {
-      const pIdx = this.snapshot.multiplayer.players.findIndex((p) => p.id === id);
-      if (pIdx >= 0) {
-        const nextPlayers = [...this.snapshot.multiplayer.players];
-        nextPlayers[pIdx] = {
-          ...nextPlayers[pIdx],
-          ability: quantised,
-        };
-        this.snapshot = {
-          ...this.snapshot,
-          multiplayer: {
-            ...this.snapshot.multiplayer,
-            players: nextPlayers,
-          },
-        };
-      }
+    if (mpIdx >= 0 && nextSnap.multiplayer) {
+      const nextPlayers = [...nextSnap.multiplayer.players];
+      nextPlayers[mpIdx] = {
+        ...nextPlayers[mpIdx],
+        ability: quantised,
+      };
+      nextSnap = {
+        ...nextSnap,
+        multiplayer: {
+          ...nextSnap.multiplayer,
+          players: nextPlayers,
+        },
+      };
     }
 
+    this.snapshot = nextSnap;
     this.emit();
   }
 

@@ -345,6 +345,33 @@ export class TableEnvironment {
     this.applyEdgeStrip(this.edgeStrips.bottom, pBottom, playerLevel, bBottom, botLevel, pulse);
   }
 
+  public updateEdgeWarningPens(
+    pens: Array<{ pos: { x: number; y: number; z: number }; level: EdgeDangerLevel }>,
+    nowMs: number
+  ): void {
+    if (pens.length === 0) return;
+    const pulse = 0.65 + 0.35 * Math.sin(nowMs * 0.012);
+
+    const evalEdge = (mat: THREE.MeshBasicMaterial, getDist: (p: { x: number; y: number; z: number }) => number) => {
+      let bestDist = Infinity;
+      let bestLevel: EdgeDangerLevel = 'SAFE';
+      for (const pen of pens) {
+        if (pen.level === 'SAFE') continue;
+        const d = getDist(pen.pos);
+        if (d < bestDist) {
+          bestDist = d;
+          bestLevel = pen.level;
+        }
+      }
+      this.applyEdgeStrip(mat, bestDist, bestLevel, Infinity, 'SAFE', pulse);
+    };
+
+    evalEdge(this.edgeStrips.left, (p) => TABLE_HALF_W + p.x);
+    evalEdge(this.edgeStrips.right, (p) => TABLE_HALF_W - p.x);
+    evalEdge(this.edgeStrips.top, (p) => TABLE_HALF_D + p.z);
+    evalEdge(this.edgeStrips.bottom, (p) => TABLE_HALF_D - p.z);
+  }
+
   /**
    * Tints one edge strip from whichever pen is closest to that edge. Written without closures or
    * temporary objects because it runs for four edges on every single rendered frame.

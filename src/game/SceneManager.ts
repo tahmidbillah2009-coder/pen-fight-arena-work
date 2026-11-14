@@ -70,7 +70,7 @@ export class SceneManager {
     const bgColor = new THREE.Color(0xe6dccb);
     this.scene.background = bgColor;
     // Calibrated gentle fog so tabletop remains crystal clear even at portrait camera distances
-    this.scene.fog = new THREE.FogExp2(0xe6dccb, 0.0042);
+    this.scene.fog = new THREE.FogExp2(0xe6dccb, 0.0034);
 
     const rect = container.getBoundingClientRect();
     this.viewWidth = Math.max(Math.round(rect.width) || container.clientWidth || window.innerWidth, 1);
@@ -110,12 +110,12 @@ export class SceneManager {
     this.keyLight.castShadow = !this.isSoftwareGl;
     this.keyLight.shadow.mapSize.width = 1024;
     this.keyLight.shadow.mapSize.height = 1024;
-    this.keyLight.shadow.camera.near = 10;
-    this.keyLight.shadow.camera.far = 34;
-    this.keyLight.shadow.camera.left = -8.8;
-    this.keyLight.shadow.camera.right = 8.8;
-    this.keyLight.shadow.camera.top = 7.2;
-    this.keyLight.shadow.camera.bottom = -7.2;
+    this.keyLight.shadow.camera.near = 8;
+    this.keyLight.shadow.camera.far = 38;
+    this.keyLight.shadow.camera.left = -11.4;
+    this.keyLight.shadow.camera.right = 11.4;
+    this.keyLight.shadow.camera.top = 9.8;
+    this.keyLight.shadow.camera.bottom = -9.8;
     // Calibrated shadow bias & normalBias: prevents shadow acne and self-shadowing without detaching shadows
     this.keyLight.shadow.bias = -0.0001;
     this.keyLight.shadow.normalBias = 0.002;

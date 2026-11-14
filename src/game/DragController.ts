@@ -47,6 +47,7 @@ export interface DragStateView {
 
 export interface DragCallbacks {
   canDrag: () => boolean;
+  canAcceptShot?: () => boolean;
   onGrabStart: () => void;
   onTelemetry: (telemetry: DragTelemetry) => void;
   onShotLaunch: (powerRatio: number) => void;
@@ -376,8 +377,20 @@ export class DragController {
 
     this.releaseCapture(e.pointerId);
     const body = this.physics.getBody(this.activePenId);
+    if (!body) {
+      this.resetInternalState();
+      this.callbacks.onDragCancel();
+      return;
+    }
     body.resetForces(true);
     body.resetTorques(true);
+
+    // Atomic turn-deadline race check: if the turn expired just prior to release, abort safely.
+    if (this.callbacks.canAcceptShot && !this.callbacks.canAcceptShot()) {
+      this.resetInternalState();
+      this.callbacks.onDragCancel();
+      return;
+    }
 
     const plan = this.computeReleasePlan();
 
@@ -420,9 +433,11 @@ export class DragController {
     if (this.activePointerId !== null) {
       this.releaseCapture(this.activePointerId);
     }
-    const body = this.physics.getBody('player');
-    body.resetForces(true);
-    body.resetTorques(true);
+    const body = this.physics.getBody(this.activePenId);
+    if (body) {
+      body.resetForces(true);
+      body.resetTorques(true);
+    }
     this.resetInternalState();
     this.callbacks.onDragCancel();
   }
@@ -453,13 +468,14 @@ export class DragController {
   }
 
   /**
-   * Keeps the player's pen anchored stationary in place during drag aiming
+   * Keeps the active player's pen anchored stationary in place during drag aiming
    * so pulling back never shifts or rotates the pen prematurely.
    */
   public applySubstepForce(_substepDt = 1 / 120): void {
     if (!this.isDragging) return;
 
-    const body = this.physics.getBody('player');
+    const body = this.physics.getBody(this.activePenId);
+    if (!body) return;
     body.resetForces(true);
     body.resetTorques(true);
     body.setLinvel({ x: 0, y: 0, z: 0 }, false);
@@ -514,7 +530,8 @@ export class DragController {
   }
 
   public emitTelemetry(): void {
-    const spec = this.physics.getPenSpec('player');
+    const spec = this.physics.getPenSpec(this.activePenId);
+    if (!spec) return;
     const penType: PenTypeId = spec.id;
     if (!this.isDragging) {
       this.callbacks.onTelemetry({

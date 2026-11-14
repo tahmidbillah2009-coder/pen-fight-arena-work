@@ -148,6 +148,7 @@ export default function App() {
   const [pendingTimer, setPendingTimer] = useState<TurnTimerOption>(15);
   const [pendingStartingTeam, setPendingStartingTeam] = useState<TeamId>('blue');
   const multiplayerResultRecordedRef = useRef(false);
+  const lastMultiplayerConfigRef = useRef<MultiplayerMatchConfig | null>(null);
 
   const initialRecord = useRef({
     wins: progression.getProfile().wins,
@@ -234,8 +235,13 @@ export default function App() {
       } catch {
         // Ignore storage quota errors
       }
-      // Record the finished match exactly once to award achievements / unlock pens.
-      if (nextSnap.matchState === 'MATCH_OVER' && nextSnap.winner) {
+      // Record finished solo VS_AI matches once to award achievements / unlock pens.
+      if (
+        nextSnap.matchState === 'MATCH_OVER' &&
+        nextSnap.winner &&
+        !nextSnap.multiplayer &&
+        nextSnap.gameMode === 'VS_AI'
+      ) {
         if (!matchRecordedRef.current) {
           matchRecordedRef.current = true;
           setProgressionEvent(progression.recordMatch(nextSnap.winner));
@@ -288,12 +294,40 @@ export default function App() {
   // A full-screen modal hides the arena, so the render/physics loop is halted instead of
   // continuing to burn GPU and CPU behind an opaque overlay.
   useEffect(() => {
-    gameRef.current?.setSuspended(settingsOpen || helpOpen || penSelectorOpen);
-  }, [settingsOpen, helpOpen, penSelectorOpen, isReady]);
+    gameRef.current?.setSuspended(
+      settingsOpen ||
+        helpOpen ||
+        penSelectorOpen ||
+        benchmarkOpen ||
+        multiplayerModeOpen ||
+        playerSetupOpen
+    );
+  }, [
+    settingsOpen,
+    helpOpen,
+    penSelectorOpen,
+    benchmarkOpen,
+    multiplayerModeOpen,
+    playerSetupOpen,
+    isReady,
+  ]);
 
-  // Keyboard shortcuts (Enter/Space to start on Menu, E to trigger ability, Escape for modals)
+  // Keyboard shortcuts (Enter/Space to start or dismiss banner, E to arm/fire ability, Escape for modals)
   useEffect(() => {
+    const anyModalOpen =
+      settingsOpen ||
+      helpOpen ||
+      penSelectorOpen ||
+      benchmarkOpen ||
+      multiplayerModeOpen ||
+      playerSetupOpen;
+
     const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isTextInput =
+        target !== null &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
       if (e.key === 'Escape') {
         if (helpOpen) {
           setHelpOpen(false);
@@ -303,19 +337,34 @@ export default function App() {
           setPenSelectorOpen(false);
         } else if (benchmarkOpen) {
           setBenchmarkOpen(false);
+        } else if (playerSetupOpen) {
+          setPlayerSetupOpen(false);
+        } else if (multiplayerModeOpen) {
+          setMultiplayerModeOpen(false);
         } else if (snapshot.matchState !== 'MENU') {
           setSettingsOpen(true);
         }
         return;
       }
 
+      if (isTextInput) return;
+
+      const hasTransitionBanner = Boolean(
+        snapshot.multiplayer?.transitionPlayer && snapshot.matchState === 'PLAYER_TURN'
+      );
+
+      if ((e.key === ' ' || e.key === 'Enter') && !anyModalOpen && hasTransitionBanner) {
+        e.preventDefault();
+        gameRef.current?.dismissTurnTransition();
+        return;
+      }
+
       if (e.key === 'e' || e.key === 'E') {
         if (
           snapshot.matchState === 'PLAYER_TURN' &&
-          !settingsOpen &&
-          !helpOpen &&
-          !penSelectorOpen &&
-          !benchmarkOpen
+          !hasTransitionBanner &&
+          !snapshot.isTurnTimeoutNotice &&
+          !anyModalOpen
         ) {
           e.preventDefault();
           gameRef.current?.activatePlayerAbility();
@@ -323,13 +372,16 @@ export default function App() {
         return;
       }
 
+      // Prevent browser spacebar scroll or accidental focused button activation during active matches.
+      if (e.key === ' ' && snapshot.matchState !== 'MENU' && !anyModalOpen) {
+        e.preventDefault();
+        return;
+      }
+
       if (
         (e.key === 'Enter' || e.key === ' ') &&
         snapshot.matchState === 'MENU' &&
-        !settingsOpen &&
-        !helpOpen &&
-        !penSelectorOpen &&
-        !benchmarkOpen &&
+        !anyModalOpen &&
         isReady
       ) {
         e.preventDefault();
@@ -339,7 +391,18 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [snapshot.matchState, settingsOpen, helpOpen, penSelectorOpen, benchmarkOpen, isReady]);
+  }, [
+    snapshot.matchState,
+    snapshot.multiplayer?.transitionPlayer,
+    snapshot.isTurnTimeoutNotice,
+    settingsOpen,
+    helpOpen,
+    penSelectorOpen,
+    benchmarkOpen,
+    multiplayerModeOpen,
+    playerSetupOpen,
+    isReady,
+  ]);
 
   const handleDifficultyChange = (difficulty: DifficultyLevel) => {
     setSettings((prev) => ({ ...prev, difficulty }));
@@ -400,6 +463,7 @@ export default function App() {
           onSelectDifficulty={handleDifficultyChange}
           onOpenPenSelector={() => setPenSelectorOpen(true)}
           onPlay={() => gameRef.current?.startMatch()}
+          onOpenMultiplayer={() => setMultiplayerModeOpen(true)}
           onOpenHowToPlay={() => setHelpOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenBenchmark={() => setBenchmarkOpen(true)}
@@ -426,18 +490,103 @@ export default function App() {
         />
       )}
 
-      {/* Match Result Modal */}
-      <ResultModal
+      {/* Turn Transition Banner (Local Hot-Seat Multiplayer) */}
+      {isInMatch &&
+        !settingsOpen &&
+        !helpOpen &&
+        !penSelectorOpen &&
+        !benchmarkOpen &&
+        snapshot.matchState === 'PLAYER_TURN' && (
+          <TurnTransitionBanner
+            player={snapshot.multiplayer?.transitionPlayer ?? null}
+            onDismiss={() => gameRef.current?.dismissTurnTransition()}
+          />
+        )}
+
+      {/* Match Result Modal (Solo vs AI only) */}
+      {!snapshot.multiplayer && snapshot.gameMode === 'VS_AI' && (
+        <ResultModal
+          snapshot={snapshot}
+          progression={progressionEvent}
+          onPlayAgain={() => gameRef.current?.restartMatch()}
+          onExitToMenu={() => gameRef.current?.returnToMenu()}
+        />
+      )}
+
+      {/* Local Multiplayer Match Result Modal */}
+      <MultiplayerResultModal
         snapshot={snapshot}
-        progression={progressionEvent}
-        onPlayAgain={() => gameRef.current?.restartMatch()}
+        onRematch={() => gameRef.current?.restartMatch()}
+        onChangeSetup={() => {
+          const prev = lastMultiplayerConfigRef.current;
+          if (prev) {
+            setPendingMode(prev.mode);
+            setPendingTimer(prev.turnTimerSeconds);
+            setPendingStartingTeam(prev.startingTeam ?? 'blue');
+          }
+          gameRef.current?.returnToMenu();
+          setPlayerSetupOpen(true);
+        }}
         onExitToMenu={() => gameRef.current?.returnToMenu()}
+      />
+
+      {/* Local Multiplayer Mode Selector */}
+      <MultiplayerModeModal
+        isOpen={multiplayerModeOpen}
+        onClose={() => setMultiplayerModeOpen(false)}
+        onSelectMode={(mode, timerOption, startingTeam) => {
+          setPendingMode(mode);
+          setPendingTimer(timerOption);
+          setPendingStartingTeam(startingTeam);
+          setMultiplayerModeOpen(false);
+          if (mode === 'VS_AI') {
+            lastMultiplayerConfigRef.current = null;
+            gameRef.current?.startMatch();
+          } else if (mode === 'PRACTICE') {
+            lastMultiplayerConfigRef.current = null;
+            gameRef.current?.startMatch({
+              mode: 'PRACTICE',
+              players: [],
+              turnTimerSeconds: 0,
+              startingTeam: 'blue',
+            });
+          } else {
+            setPlayerSetupOpen(true);
+          }
+        }}
+      />
+
+      {/* Local Multiplayer Player & Pen Setup */}
+      <PlayerSetupModal
+        isOpen={playerSetupOpen}
+        mode={pendingMode}
+        turnTimer={pendingTimer}
+        startingTeam={pendingStartingTeam}
+        onBack={() => {
+          setPlayerSetupOpen(false);
+          setMultiplayerModeOpen(true);
+        }}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onStartMatch={(players: PlayerConfig[], startingPlayerId: string, customTurnOrder: string[]) => {
+          const config: MultiplayerMatchConfig = {
+            mode: pendingMode,
+            players,
+            turnTimerSeconds: pendingTimer,
+            startingTeam: pendingStartingTeam,
+            startingPlayerId,
+            customTurnOrder,
+          };
+          lastMultiplayerConfigRef.current = config;
+          setPlayerSetupOpen(false);
+          gameRef.current?.startMatch(config);
+        }}
       />
 
       {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsOpen}
         isInMatch={isInMatch}
+        isMultiplayer={Boolean(snapshot.multiplayer)}
         settings={settings}
         onUpdateSettings={setSettings}
         onOpenPenSelector={() => {

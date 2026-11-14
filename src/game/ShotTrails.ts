@@ -4,14 +4,15 @@ import { EffectQuality, PlayerId } from './GameState';
 /**
  * SPECIAL SHOT MOTION TRAILS
  * --------------------------
- * A pooled, allocation-free ribbon that traces a pen's writing tip while its Special Shot is
- * running. Two ring buffers (player / bot) feed a single InstancedMesh, so a trail costs exactly
- * one draw call and nothing at all is created per frame. Beads taper toward the tail and the
- * ribbon dissolves shortly after the shot ends, so temporary visuals never accumulate.
+ * A pooled, allocation-free ribbon that traces each pen's writing tip while its Special Shot is
+ * running. Ring buffers (up to 6 pens simultaneously for 3v3 multiplayer) feed a single
+ * InstancedMesh, so trails cost one draw call and nothing is allocated per frame. Beads taper
+ * toward the tail and dissolve shortly after the shot ends.
  */
 
 const MAX_SEGMENTS = 48;
 const REDUCED_SEGMENTS = 18;
+const MAX_TRAILS = 6;
 const MIN_STEP_SQ = 0.0025; // ~5cm between beads keeps the ribbon smooth and cheap
 
 interface TrailState {
@@ -33,7 +34,7 @@ export class ShotTrailSystem {
   private readonly mesh: THREE.InstancedMesh;
   private readonly dummy = new THREE.Object3D();
   private readonly colorTmp = new THREE.Color();
-  private readonly trails: Record<PlayerId, TrailState>;
+  private readonly trails = new Map<PlayerId, TrailState>();
 
   private segments = MAX_SEGMENTS;
   private quality: EffectQuality = 'HIGH';
@@ -47,11 +48,11 @@ export class ShotTrailSystem {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
-    this.mesh = new THREE.InstancedMesh(this.geo, this.mat, MAX_SEGMENTS * 2);
+    this.mesh = new THREE.InstancedMesh(this.geo, this.mat, MAX_SEGMENTS * MAX_TRAILS);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
 
-    for (let i = 0; i < MAX_SEGMENTS * 2; i++) {
+    for (let i = 0; i < MAX_SEGMENTS * MAX_TRAILS; i++) {
       this.dummy.position.set(0, -100, 0);
       this.dummy.scale.setScalar(0.001);
       this.dummy.updateMatrix();
@@ -62,10 +63,8 @@ export class ShotTrailSystem {
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
     this.group.add(this.mesh);
 
-    this.trails = {
-      player: this.createState(),
-      bot: this.createState(),
-    };
+    this.getOrCreate('player');
+    this.getOrCreate('bot');
   }
 
   private createState(): TrailState {
@@ -79,6 +78,24 @@ export class ShotTrailSystem {
       ys: new Float32Array(MAX_SEGMENTS),
       zs: new Float32Array(MAX_SEGMENTS),
     };
+  }
+
+  private getOrCreate(id: PlayerId): TrailState {
+    let t = this.trails.get(id);
+    if (!t) {
+      // Recycle an idle slot if we somehow exceed MAX_TRAILS keys across sessions.
+      if (this.trails.size >= MAX_TRAILS) {
+        for (const [existingId, state] of this.trails.entries()) {
+          if (!state.running && state.count === 0) {
+            this.trails.delete(existingId);
+            break;
+          }
+        }
+      }
+      t = this.createState();
+      this.trails.set(id, t);
+    }
+    return t;
   }
 
   /**
@@ -99,8 +116,7 @@ export class ShotTrailSystem {
     this.mat.blending = reduced ? THREE.NormalBlending : THREE.AdditiveBlending;
     this.mat.opacity = reduced ? 0.72 : 0.9;
     this.mat.needsUpdate = true;
-    for (const id of ['player', 'bot'] as const) {
-      const t = this.trails[id];
+    for (const t of this.trails.values()) {
       t.count = Math.min(t.count, this.segments);
       t.head = t.head % this.segments;
     }
@@ -109,7 +125,7 @@ export class ShotTrailSystem {
 
   /** Starts a fresh ribbon for a pen in the shot's own colour. */
   public begin(id: PlayerId, colorHex: number): void {
-    const t = this.trails[id];
+    const t = this.getOrCreate(id);
     t.colorHex = colorHex;
     t.head = 0;
     t.count = 0;
@@ -119,7 +135,7 @@ export class ShotTrailSystem {
 
   /** Appends a bead at the pen's tip. `colorHex` is ignored unless it differs from the current run. */
   public push(id: PlayerId, x: number, y: number, z: number, colorHex: number): void {
-    const t = this.trails[id];
+    const t = this.getOrCreate(id);
     if (!t.running || t.colorHex !== colorHex) {
       this.begin(id, colorHex);
     }
@@ -144,19 +160,14 @@ export class ShotTrailSystem {
 
   /** Stops growing the ribbon; the existing beads dissolve over the next few frames. */
   public end(id: PlayerId): void {
-    const t = this.trails[id];
-    if (!t.running) return;
+    const t = this.trails.get(id);
+    if (!t || !t.running) return;
     t.running = false;
     if (t.linger <= 0) t.linger = 0.22;
   }
 
   public reset(): void {
-    for (const id of ['player', 'bot'] as const) {
-      const t = this.trails[id];
-      t.running = false;
-      t.count = 0;
-      t.linger = 0;
-    }
+    this.trails.clear();
     this.hideAll();
   }
 
@@ -164,8 +175,7 @@ export class ShotTrailSystem {
     // Effects disabled: nothing to fade and nothing to rebuild.
     if (this.quality === 'OFF') return;
     const cap = this.segments;
-    for (const id of ['player', 'bot'] as const) {
-      const t = this.trails[id];
+    for (const t of this.trails.values()) {
       if (!t.running && t.count > 0) {
         t.linger -= dt;
         if (t.linger <= 0) {
@@ -178,29 +188,42 @@ export class ShotTrailSystem {
 
   private rebuild(): void {
     const cap = this.segments;
-    let base = 0;
-    for (const id of ['player', 'bot'] as const) {
-      const t = this.trails[id];
+    const maxInstances = MAX_SEGMENTS * MAX_TRAILS;
+    let slot = 0;
+
+    for (const t of this.trails.values()) {
+      if (slot + cap > maxInstances) break;
       this.colorTmp.setHex(t.colorHex);
       for (let i = 0; i < cap; i++) {
-        const slot = base + i;
         if (i >= t.count) {
           this.dummy.position.set(0, -100, 0);
           this.dummy.scale.setScalar(0.001);
           this.dummy.updateMatrix();
           this.mesh.setMatrixAt(slot, this.dummy.matrix);
-          continue;
+        } else {
+          const idx = (t.head - t.count + i + cap) % cap;
+          const fade = t.count > 1 ? i / (t.count - 1) : 1;
+          this.dummy.position.set(t.xs[idx], t.ys[idx], t.zs[idx]);
+          this.dummy.scale.setScalar(0.28 + 0.72 * fade);
+          this.dummy.updateMatrix();
+          this.mesh.setMatrixAt(slot, this.dummy.matrix);
+          this.mesh.setColorAt(slot, this.colorTmp);
         }
-        const idx = (t.head - t.count + i + cap) % cap;
-        const fade = t.count > 1 ? i / (t.count - 1) : 1;
-        this.dummy.position.set(t.xs[idx], t.ys[idx], t.zs[idx]);
-        this.dummy.scale.setScalar(0.28 + 0.72 * fade);
-        this.dummy.updateMatrix();
-        this.mesh.setMatrixAt(slot, this.dummy.matrix);
-        this.mesh.setColorAt(slot, this.colorTmp);
+        slot += 1;
       }
-      base += cap;
     }
+
+    // Ensure unused instances stay parked below the floor.
+    if (slot < maxInstances) {
+      this.dummy.position.set(0, -100, 0);
+      this.dummy.scale.setScalar(0.001);
+      this.dummy.updateMatrix();
+      while (slot < maxInstances) {
+        this.mesh.setMatrixAt(slot, this.dummy.matrix);
+        slot += 1;
+      }
+    }
+
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
@@ -209,7 +232,7 @@ export class ShotTrailSystem {
     this.dummy.position.set(0, -100, 0);
     this.dummy.scale.setScalar(0.001);
     this.dummy.updateMatrix();
-    for (let i = 0; i < MAX_SEGMENTS * 2; i++) {
+    for (let i = 0; i < MAX_SEGMENTS * MAX_TRAILS; i++) {
       this.mesh.setMatrixAt(i, this.dummy.matrix);
     }
     this.mesh.instanceMatrix.needsUpdate = true;

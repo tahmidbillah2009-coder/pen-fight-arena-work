@@ -194,6 +194,10 @@ export class SpecialShotSystem {
         ? Object.keys(this.uses)
         : ['player', 'bot'];
 
+    for (const key of Object.keys(this.active)) delete this.active[key];
+    for (const key of Object.keys(this.cooldown)) delete this.cooldown[key];
+    for (const key of Object.keys(this.uses)) delete this.uses[key];
+
     for (const id of ids) {
       try {
         const spec = this.getPenSpec(id);
@@ -224,7 +228,7 @@ export class SpecialShotSystem {
   }
 
   public isActive(id: PlayerId): boolean {
-    return this.active[id] !== null;
+    return Boolean(this.active[id]);
   }
 
   /** Trail colour for the shot currently running (or null when idle). */
@@ -387,7 +391,7 @@ export class SpecialShotSystem {
   public getHudState(id: PlayerId, canActivate: boolean): AbilityHudState {
     const spec = this.getPenSpec(id);
     const shot = spec.specialShot;
-    const a = this.active[id];
+    const a = this.active[id] ?? null;
     return {
       abilityId: spec.passive.id,
       passiveName: spec.passive.name,
@@ -399,9 +403,9 @@ export class SpecialShotSystem {
       isActive: a !== null,
       activeRemaining: a ? Math.max(0, shot.durationSeconds - a.elapsed) : 0,
       activeTotal: shot.durationSeconds,
-      cooldownRemaining: this.cooldown[id],
+      cooldownRemaining: this.cooldown[id] ?? 0,
       cooldownTotal: shot.cooldownSeconds,
-      usesRemaining: this.uses[id],
+      usesRemaining: this.uses[id] ?? shot.maxUsesPerMatch,
       maxUsesPerMatch: shot.maxUsesPerMatch,
       canActivate,
       // Overwritten by the AbilitySystem facade with the real armed state.
@@ -411,15 +415,15 @@ export class SpecialShotSystem {
 
   public getNetworkState(id: PlayerId): SpecialShotNetworkState {
     const shot = this.getPenSpec(id).specialShot;
-    const a = this.active[id];
+    const a = this.active[id] ?? null;
     return {
       shotId: shot.id,
       dirX: a?.ctx.dirX ?? 0,
       dirZ: a?.ctx.dirZ ?? 0,
       isActive: a !== null,
       activeRemaining: a ? Math.max(0, shot.durationSeconds - a.elapsed) : 0,
-      cooldownRemaining: this.cooldown[id],
-      usesRemaining: this.uses[id],
+      cooldownRemaining: this.cooldown[id] ?? 0,
+      usesRemaining: this.uses[id] ?? shot.maxUsesPerMatch,
     };
   }
 

@@ -1,23 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Award,
+  Bot,
+  ChevronRight,
   Clock,
+  Flame,
   Swords,
   Users,
   X,
-  Shield,
-  ChevronRight,
-  Bot,
-  Flame,
-  Award,
 } from 'lucide-react';
 import {
   GameMode,
   MULTIPLAYER_MODES,
+  TeamId,
   TURN_TIMER_OPTIONS,
   TurnTimerOption,
-  TeamId,
 } from '../game/MultiplayerTypes';
-import { MultiplayerStorage } from '../utils/MultiplayerStorage';
+import { LocalMultiplayerRecord, MultiplayerStorage } from '../utils/MultiplayerStorage';
 
 interface MultiplayerModeModalProps {
   isOpen: boolean;
@@ -34,10 +33,19 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
   onClose,
   onSelectMode,
 }) => {
-  const [records] = useState(() => MultiplayerStorage.load());
+  const [records, setRecords] = useState<LocalMultiplayerRecord>(() => MultiplayerStorage.load());
   const [selectedMode, setSelectedMode] = useState<GameMode>(records.lastMode || '1v1');
-  const [turnTimer, setTurnTimer] = useState<TurnTimerOption>(records.timerPreference || 15);
-  const [startingTeam, setStartingTeam] = useState<TeamId>('blue');
+  const [turnTimer, setTurnTimer] = useState<TurnTimerOption>(records.timerPreference ?? 15);
+  const [startingTeam, setStartingTeam] = useState<TeamId>(records.startingTeamPreference || 'blue');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const latest = MultiplayerStorage.load();
+    setRecords(latest);
+    setSelectedMode(latest.lastMode || '1v1');
+    setTurnTimer(latest.timerPreference ?? 15);
+    setStartingTeam(latest.startingTeamPreference || 'blue');
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -47,6 +55,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
   const isMultiplayer = !isAiMode && !isPracticeMode;
 
   const handleProceed = () => {
+    MultiplayerStorage.saveModePreference(selectedMode, turnTimer, startingTeam);
     onSelectMode(selectedMode, turnTimer, startingTeam);
   };
 
@@ -64,7 +73,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                 MATCH MODE SELECTION
               </h2>
               <p className="text-xs text-slate-400">
-                Same-device local multiplayer · Take turns on one screen
+                Same-device hot-seat multiplayer · One shared screen &amp; arena
               </p>
             </div>
           </div>
@@ -72,7 +81,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
@@ -84,7 +93,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
           <div>
             <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-400">
               <span>LOCAL MULTIPLAYER MODES</span>
-              <span className="text-[11px] text-blue-400">2 to 6 Players</span>
+              <span className="text-[11px] text-blue-400">2 to 6 Players · Pass &amp; Play</span>
             </div>
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {MULTIPLAYER_MODES.map((mode) => {
@@ -106,7 +115,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                       </span>
                       <span className="flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-300">
                         <Users className="h-3 w-3 text-sky-400" />
-                        {mode.playerCount}P
+                        {mode.playerCount} Players
                       </span>
                     </div>
 
@@ -131,9 +140,9 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
           {/* Solo & Practice Options */}
           <div>
             <div className="mb-2 text-xs font-semibold text-slate-400">
-              SOLO MODES
+              SOLO &amp; PRACTICE MODES
             </div>
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
                 onClick={() => setSelectedMode('VS_AI')}
@@ -146,8 +155,11 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
                   <Bot className="h-4 w-4" />
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-white">Player vs AI</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-white">Player vs AI</span>
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">1P</span>
+                  </div>
                   <div className="text-[11px] text-slate-400">Classic 1v1 duel against bot</div>
                 </div>
               </button>
@@ -157,16 +169,19 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                 onClick={() => setSelectedMode('PRACTICE')}
                 className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
                   selectedMode === 'PRACTICE'
-                    ? 'border-blue-400 bg-blue-950/40 ring-1 ring-blue-400'
+                    ? 'border-emerald-400 bg-emerald-950/35 ring-1 ring-emerald-400'
                     : 'border-white/10 bg-slate-900/60 hover:border-white/25 hover:bg-slate-900'
                 }`}
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   <Flame className="h-4 w-4" />
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-white">Practice Mode</div>
-                  <div className="text-[11px] text-slate-400">Freeplay desk arena</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-white">Practice Mode</span>
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">Freeplay</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">Unlimited shots &amp; respawn targets</div>
                 </div>
               </button>
             </div>
@@ -177,7 +192,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
             <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4 space-y-4">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-300">
                 <Clock className="h-4 w-4 text-amber-400" />
-                <span>Turn Timer & Match Rules</span>
+                <span>Turn Timer &amp; Match Rules</span>
               </div>
 
               {/* Turn Duration selection */}
@@ -188,7 +203,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                     {turnTimer === 0 ? 'Unlimited' : `${turnTimer} seconds per turn`}
                   </span>
                 </div>
-                <div className="grid grid-cols-5 gap-1.5">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
                   {TURN_TIMER_OPTIONS.map((opt) => {
                     const active = turnTimer === opt.value;
                     return (
@@ -196,7 +211,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                         key={opt.value}
                         type="button"
                         onClick={() => setTurnTimer(opt.value)}
-                        className={`min-h-[38px] rounded-lg border text-xs font-semibold transition-all ${
+                        className={`min-h-[38px] rounded-lg border px-2 text-xs font-semibold transition-all ${
                           active
                             ? 'border-amber-400 bg-amber-950/60 text-amber-200'
                             : 'border-white/10 bg-slate-950/50 text-slate-400 hover:text-white hover:border-white/20'
@@ -207,19 +222,19 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                     );
                   })}
                 </div>
-                <p className="mt-1 text-[11px] text-slate-500">
+                <p className="mt-1.5 text-[11px] text-slate-400">
                   Turns automatically skip when time expires. Shots in motion are never cancelled.
                 </p>
               </div>
 
               {/* Starting Team Selection */}
               <div>
-                <div className="mb-1.5 text-xs text-slate-300">Starting Team</div>
+                <div className="mb-1.5 text-xs text-slate-300">First Turn Advantage</div>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setStartingTeam('blue')}
-                    className={`flex items-center justify-center gap-2 rounded-lg border py-2 text-xs font-bold transition-all ${
+                    className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-xs font-bold transition-all ${
                       startingTeam === 'blue'
                         ? 'border-blue-400 bg-blue-900/50 text-blue-200'
                         : 'border-white/10 bg-slate-950/40 text-slate-400 hover:text-white'
@@ -232,7 +247,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setStartingTeam('red')}
-                    className={`flex items-center justify-center gap-2 rounded-lg border py-2 text-xs font-bold transition-all ${
+                    className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-xs font-bold transition-all ${
                       startingTeam === 'red'
                         ? 'border-rose-400 bg-rose-900/50 text-rose-200'
                         : 'border-white/10 bg-slate-950/40 text-slate-400 hover:text-white'
@@ -248,26 +263,29 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
 
           {/* Local Multiplayer Records Summary */}
           {records.matchesPlayed > 0 && (
-            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2.5 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2.5 text-xs text-slate-400">
               <span className="flex items-center gap-1.5">
                 <Award className="h-4 w-4 text-amber-400" />
-                <span>Local Records:</span>
+                <span>Local Scoreboard:</span>
               </span>
-              <span className="font-semibold text-blue-300">Blue {records.blueWins}W</span>
-              <span className="text-slate-600">·</span>
-              <span className="font-semibold text-rose-300">Red {records.redWins}W</span>
-              <span className="text-slate-600">·</span>
-              <span>{records.matchesPlayed} Matches</span>
+              <div className="flex items-center gap-2 font-mono-num">
+                <span className="font-semibold text-blue-300">Blue {records.blueWins}W</span>
+                <span className="text-slate-600">·</span>
+                <span className="font-semibold text-rose-300">Red {records.redWins}W</span>
+                <span className="text-slate-600">·</span>
+                <span>{records.matchesPlayed} Matches</span>
+              </div>
             </div>
           )}
         </div>
 
         {/* Modal Footer */}
-        <div className="flex shrink-0 items-center justify-between border-t border-white/10 bg-slate-900/80 px-5 py-4">
-          <div className="text-xs text-slate-400">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-white/10 bg-slate-900/80 px-4 py-3.5 sm:px-5 sm:py-4">
+          <div className="text-xs text-slate-400 min-w-0 truncate">
             {isMultiplayer ? (
               <span>
-                Selected: <strong className="text-white">{currentModeSpec?.label}</strong> ({currentModeSpec?.playerCount} Players)
+                Selected: <strong className="text-white">{currentModeSpec?.label}</strong> ·{' '}
+                <strong className="text-sky-300">{currentModeSpec?.playerCount} Players</strong>
               </span>
             ) : (
               <span>
@@ -276,11 +294,11 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-700"
+              className="rounded-xl border border-white/10 bg-slate-800 px-3.5 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-700 sm:px-4"
             >
               Cancel
             </button>
@@ -288,7 +306,7 @@ export const MultiplayerModeModal: React.FC<MultiplayerModeModalProps> = ({
             <button
               type="button"
               onClick={handleProceed}
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg transition-colors hover:bg-blue-500"
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg transition-colors hover:bg-blue-500 sm:px-5"
             >
               <span>{isMultiplayer ? 'Next: Player Setup' : 'Start Match'}</span>
               <ChevronRight className="h-4 w-4" />

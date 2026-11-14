@@ -14,6 +14,7 @@ import {
 interface SettingsModalProps {
   isOpen: boolean;
   isInMatch: boolean;
+  isMultiplayer?: boolean;
   settings: GameSettings;
   onUpdateSettings: (next: GameSettings) => void;
   onOpenPenSelector: () => void;
@@ -123,6 +124,7 @@ function Segmented<T extends string>({
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   isInMatch,
+  isMultiplayer = false,
   settings,
   onUpdateSettings,
   onOpenPenSelector,
@@ -308,35 +310,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Equipped Pen — opens the full 3D Pen Selector */}
-          <div>
-            <div className="mb-2 text-xs font-semibold text-slate-400">Your Pen</div>
-            <button
-              type="button"
-              onClick={onOpenPenSelector}
-              className="group flex w-full items-center gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-left transition-colors hover:border-sky-400/50 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-blue-400"
-            >
-              <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${rarity.ring} ${rarity.bg}`}
+          {/* Equipped Pen — solo / practice only (multiplayer players equip pens in Player Setup) */}
+          {!isMultiplayer && (
+            <div>
+              <div className="mb-2 text-xs font-semibold text-slate-400">Your Pen</div>
+              <button
+                type="button"
+                onClick={onOpenPenSelector}
+                className="group flex w-full items-center gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-left transition-colors hover:border-sky-400/50 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-blue-400"
               >
-                <PenTool className={`h-4 w-4 ${rarity.text}`} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2">
-                  <span className="truncate text-sm font-bold text-white">{penSpec.label}</span>
-                  <span
-                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${rarity.bg} ${rarity.text}`}
-                  >
-                    {penSpec.rarity}
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${rarity.ring} ${rarity.bg}`}
+                >
+                  <PenTool className={`h-4 w-4 ${rarity.text}`} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm font-bold text-white">{penSpec.label}</span>
+                    <span
+                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${rarity.bg} ${rarity.text}`}
+                    >
+                      {penSpec.rarity}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11px] text-slate-400">
+                    {penSpec.tagline}
                   </span>
                 </span>
-                <span className="mt-0.5 block truncate text-[11px] text-slate-400">
-                  {penSpec.tagline}
-                </span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-300" />
-            </button>
-          </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-300" />
+              </button>
+            </div>
+          )}
 
           {/* Graphics Quality */}
           <div>
@@ -353,29 +357,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
 
-          {/* AI Difficulty */}
-          <div>
-            <div className="mb-2 text-xs font-semibold text-slate-400">AI Difficulty</div>
-            <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-900 p-1">
-              {DIFFICULTIES.map((lvl) => (
-                <button
-                  key={lvl}
-                  type="button"
-                  onClick={() => onUpdateSettings({ ...settings, difficulty: lvl })}
-                  className={`min-h-[40px] rounded-lg py-2 text-xs font-semibold transition-colors ${
-                    settings.difficulty === lvl
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {DIFFICULTY_CONFIGS[lvl].label}
-                </button>
-              ))}
+          {/* AI Difficulty — solo vs AI only */}
+          {!isMultiplayer && (
+            <div>
+              <div className="mb-2 text-xs font-semibold text-slate-400">AI Difficulty</div>
+              <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-900 p-1">
+                {DIFFICULTIES.map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => onUpdateSettings({ ...settings, difficulty: lvl })}
+                    className={`min-h-[40px] rounded-lg py-2 text-xs font-semibold transition-colors ${
+                      settings.difficulty === lvl
+                        ? 'bg-blue-600 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {DIFFICULTY_CONFIGS[lvl].label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-slate-400">
+                {DIFFICULTY_CONFIGS[settings.difficulty].description}
+              </p>
             </div>
-            <p className="mt-1.5 text-xs text-slate-400">
-              {DIFFICULTY_CONFIGS[settings.difficulty].description}
-            </p>
-          </div>
+          )}
 
           {/* Quick Actions */}
           <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:gap-2.5">

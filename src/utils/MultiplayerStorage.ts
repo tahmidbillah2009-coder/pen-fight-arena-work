@@ -1,5 +1,5 @@
-import { GameMode, TurnTimerOption } from '../game/MultiplayerTypes';
-import { PenTypeId, STARTER_PEN } from './Constants';
+import { GameMode, PenSkinId, TeamId, TurnTimerOption } from '../game/MultiplayerTypes';
+import { isPenTypeId, PenTypeId } from './Constants';
 
 const MULTIPLAYER_STORAGE_KEY = 'pen_fight_arena_local_multiplayer_v1';
 
@@ -10,8 +10,10 @@ export interface LocalMultiplayerRecord {
   matchesPlayed: number;
   lastMode: GameMode;
   timerPreference: TurnTimerOption;
+  startingTeamPreference: TeamId;
   savedPlayerNames: Record<string, string>;
   savedPlayerPens: Record<string, PenTypeId>;
+  savedPlayerSkins: Record<string, PenSkinId>;
 }
 
 const DEFAULT_RECORD: LocalMultiplayerRecord = {
@@ -21,8 +23,10 @@ const DEFAULT_RECORD: LocalMultiplayerRecord = {
   matchesPlayed: 0,
   lastMode: '1v1',
   timerPreference: 15,
+  startingTeamPreference: 'blue',
   savedPlayerNames: {},
   savedPlayerPens: {},
+  savedPlayerSkins: {},
 };
 
 export class MultiplayerStorage {
@@ -31,11 +35,18 @@ export class MultiplayerStorage {
       const raw = localStorage.getItem(MULTIPLAYER_STORAGE_KEY);
       if (!raw) return { ...DEFAULT_RECORD };
       const parsed = JSON.parse(raw) as Partial<LocalMultiplayerRecord>;
+      const validPens: Record<string, PenTypeId> = {};
+      if (parsed.savedPlayerPens) {
+        for (const [k, v] of Object.entries(parsed.savedPlayerPens)) {
+          if (isPenTypeId(v)) validPens[k] = v;
+        }
+      }
       return {
         ...DEFAULT_RECORD,
         ...parsed,
         savedPlayerNames: { ...DEFAULT_RECORD.savedPlayerNames, ...(parsed.savedPlayerNames || {}) },
-        savedPlayerPens: { ...DEFAULT_RECORD.savedPlayerPens, ...(parsed.savedPlayerPens || {}) },
+        savedPlayerPens: validPens,
+        savedPlayerSkins: { ...DEFAULT_RECORD.savedPlayerSkins, ...(parsed.savedPlayerSkins || {}) },
       };
     } catch {
       return { ...DEFAULT_RECORD };
@@ -60,14 +71,24 @@ export class MultiplayerStorage {
     this.save(data);
   }
 
+  public static saveModePreference(mode: GameMode, timer: TurnTimerOption, startingTeam: TeamId): void {
+    const data = this.load();
+    data.lastMode = mode;
+    data.timerPreference = timer;
+    data.startingTeamPreference = startingTeam;
+    this.save(data);
+  }
+
   public static saveRosterSelections(
     names: Record<string, string>,
     pens: Record<string, PenTypeId>,
-    timer: TurnTimerOption
+    timer: TurnTimerOption,
+    skins: Record<string, PenSkinId> = {}
   ): void {
     const data = this.load();
     data.savedPlayerNames = { ...data.savedPlayerNames, ...names };
     data.savedPlayerPens = { ...data.savedPlayerPens, ...pens };
+    data.savedPlayerSkins = { ...data.savedPlayerSkins, ...skins };
     data.timerPreference = timer;
     this.save(data);
   }

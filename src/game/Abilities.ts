@@ -68,6 +68,15 @@ export class PassiveAbilitySystem {
         ? Object.keys(this.baselines)
         : ['player', 'bot'];
 
+    if (playerIds && playerIds.length > 0) {
+      for (const k of Object.keys(this.baselines)) {
+        delete this.baselines[k];
+      }
+      for (const k of Object.keys(this.shotActive)) {
+        delete this.shotActive[k];
+      }
+    }
+
     for (const id of ids) {
       this.shotActive[id] = false;
       try {
@@ -225,14 +234,13 @@ export class AbilitySystem {
 
   /** Fresh match / pen swap: clears armed state, active windows, cooldowns and use budgets. */
   public reset(playerIds?: string[]): void {
-    this.armed = { player: false, bot: false };
-    if (playerIds) {
-      for (const id of playerIds) {
-        this.armed[id] = false;
-      }
+    this.armed = {};
+    const ids = playerIds && playerIds.length > 0 ? playerIds : ['player', 'bot'];
+    for (const id of ids) {
+      this.armed[id] = false;
     }
-    this.passive.reset(playerIds);
-    this.shots.reset(playerIds);
+    this.passive.reset(ids);
+    this.shots.reset(ids);
   }
 
   /** Re-writes a pen's passive tuning onto its (possibly rebuilt) rigid body — used after a pen swap. */
@@ -247,7 +255,7 @@ export class AbilitySystem {
   }
 
   public isArmed(id: PlayerId): boolean {
-    return this.armed[id];
+    return Boolean(this.armed[id]);
   }
 
   /** Primes the Special Shot so the aim preview shows its physics path. No-op when unavailable. */
