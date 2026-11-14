@@ -9,7 +9,6 @@ import { PenSelector } from './components/PenSelector';
 import { PlayerSetupModal } from './components/PlayerSetupModal';
 import { ResultModal } from './components/ResultModal';
 import { SettingsModal } from './components/Settings';
-import { TurnTransitionBanner } from './components/TurnTransitionBanner';
 import { PenFightGame } from './game/Game';
 import { abilityHudDefaults, DifficultyLevel, GameSettings, GameSnapshot } from './game/GameState';
 import {
@@ -27,7 +26,7 @@ import {
   ProgressionEvent,
   ProgressionManager,
 } from './game/Progression';
-import { isPenTypeId, PenTypeId, STARTER_PEN } from './utils/Constants';
+import { isPenTypeId, PenTypeId, resolveArenaOrientation, STARTER_PEN } from './utils/Constants';
 import { MultiplayerStorage } from './utils/MultiplayerStorage';
 
 // v2: the performance settings block (FPS counter, quality tiers, resolution) was added, and the
@@ -200,6 +199,10 @@ export default function App() {
     turnTimeTotal: 15,
     isTurnTimerRunning: false,
     isTurnTimeoutNotice: false,
+    arenaOrientation:
+      typeof window !== 'undefined'
+        ? resolveArenaOrientation(window.innerWidth, window.innerHeight)
+        : 'horizontal',
   });
 
   // Keep the UI collection in sync with the persisted profile (unlocks / achievements).
@@ -349,16 +352,6 @@ export default function App() {
 
       if (isTextInput) return;
 
-      const hasTransitionBanner = Boolean(
-        snapshot.multiplayer?.transitionPlayer && snapshot.matchState === 'PLAYER_TURN'
-      );
-
-      if ((e.key === ' ' || e.key === 'Enter') && !anyModalOpen && hasTransitionBanner) {
-        e.preventDefault();
-        gameRef.current?.dismissTurnTransition();
-        return;
-      }
-
       // Prevent browser spacebar scroll or accidental focused button activation during active matches.
       if (e.key === ' ' && snapshot.matchState !== 'MENU' && !anyModalOpen) {
         e.preventDefault();
@@ -380,7 +373,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     snapshot.matchState,
-    snapshot.multiplayer?.transitionPlayer,
     snapshot.isTurnTimeoutNotice,
     settingsOpen,
     helpOpen,
@@ -476,19 +468,6 @@ export default function App() {
           onExitToMenu={() => gameRef.current?.returnToMenu()}
         />
       )}
-
-      {/* Turn Transition Banner (Local Hot-Seat Multiplayer) */}
-      {isInMatch &&
-        !settingsOpen &&
-        !helpOpen &&
-        !penSelectorOpen &&
-        !benchmarkOpen &&
-        snapshot.matchState === 'PLAYER_TURN' && (
-          <TurnTransitionBanner
-            player={snapshot.multiplayer?.transitionPlayer ?? null}
-            onDismiss={() => gameRef.current?.dismissTurnTransition()}
-          />
-        )}
 
       {/* Match Result Modal (Solo vs AI only) */}
       {!snapshot.multiplayer && snapshot.gameMode === 'VS_AI' && (

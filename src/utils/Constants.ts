@@ -124,7 +124,51 @@ export const PEN_HALF_LENGTH = PEN_LENGTH * 0.5;
 export const PEN_RADIUS = PEN_SPECS[STARTER_PEN].radius;
 export const PEN_REST_Y = PEN_RADIUS + 0.005;
 
-// Starting spawns positioned proportionally in the 19.5 x 12.5 arena
+export type ArenaOrientation = 'horizontal' | 'vertical';
+
+export function resolveArenaOrientation(
+  width: number,
+  height: number,
+  current?: ArenaOrientation
+): ArenaOrientation {
+  const safeW = Math.max(1, width);
+  const safeH = Math.max(1, height);
+  const aspect = safeW / safeH;
+  // Use gentle hysteresis around square viewports so desktop split-screen windows never flicker,
+  // while mobile portrait (<0.90) and tablet portrait (~0.70–0.75) always use the vertical tabletop.
+  if (current === 'vertical') {
+    return aspect >= 0.96 ? 'horizontal' : 'vertical';
+  }
+  return aspect < 0.90 ? 'vertical' : 'horizontal';
+}
+
+export function getArenaHalfExtents(orientation: ArenaOrientation): {
+  halfW: number;
+  halfD: number;
+} {
+  return orientation === 'vertical'
+    ? { halfW: TABLE_HALF_D, halfD: TABLE_HALF_W }
+    : { halfW: TABLE_HALF_W, halfD: TABLE_HALF_D };
+}
+
+export function transformSpawnForOrientation(
+  spawn: { x: number; y: number; z: number; yaw: number },
+  orientation: ArenaOrientation
+): { x: number; y: number; z: number; yaw: number } {
+  if (orientation === 'horizontal') {
+    return { ...spawn };
+  }
+  // +90 deg CCW around +Y: (x, z) -> (z, -x), yaw -> yaw + PI/2
+  // Moves Player 1 (-X left) to +Z (bottom) and Player 2 (+X right) to -Z (top).
+  return {
+    x: spawn.z,
+    y: spawn.y,
+    z: -spawn.x,
+    yaw: spawn.yaw + Math.PI * 0.5,
+  };
+}
+
+// Starting spawns positioned proportionally in the 19.5 x 12.5 arena (horizontal default)
 export const PLAYER_SPAWN = { x: -4.75, y: PEN_REST_Y, z: 0.56, yaw: 0.18 };
 export const BOT_SPAWN = { x: 4.75, y: PEN_REST_Y, z: -0.56, yaw: Math.PI - 0.18 };
 

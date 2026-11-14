@@ -1,4 +1,5 @@
 import {
+  ArenaOrientation,
   PEN_SPECS,
   PenAbilityId,
   PenSpecialShotId,
@@ -134,6 +135,7 @@ export interface GameSnapshot {
   playerAbility: AbilityHudState;
   botAbility: AbilityHudState;
   gameMode: GameMode;
+  arenaOrientation: ArenaOrientation;
   multiplayer: MultiplayerMatchSnapshot | null;
   turnTimeRemaining: number;
   turnTimeTotal: number;
@@ -210,6 +212,7 @@ export class GameStateManager {
       playerAbility: abilityHudDefaults(playerPenType),
       botAbility: abilityHudDefaults('IRON_FORCE'),
       gameMode: 'VS_AI',
+      arenaOrientation: 'horizontal',
       multiplayer: null,
       turnTimeRemaining: 15,
       turnTimeTotal: 15,

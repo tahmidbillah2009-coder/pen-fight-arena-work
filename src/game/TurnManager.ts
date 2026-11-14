@@ -10,6 +10,7 @@ import {
   SETTLE_ANG_SPEED,
   SETTLE_HOLD_SECONDS,
   SETTLE_LIN_SPEED,
+  transformSpawnForOrientation,
 } from '../utils/Constants';
 import { abilityHudDefaults, EdgeWarningState, GameStateManager, PlayerId } from './GameState';
 import {
@@ -118,13 +119,13 @@ export class TurnManager {
   }
 
   /**
-   * Race-safe check executed right at drag release or Special Shot firing.
-   * Ensures a shot cannot fire after the turn deadline has already expired or while a transition banner blocks input.
+   * Race-safe check executed right at drag release.
+   * Ensures a shot cannot fire after the turn deadline has already expired or during a timeout flash.
    */
   public canAcceptShot(): boolean {
     const snap = this.state.getSnapshot();
     if (snap.matchState !== 'PLAYER_TURN') return false;
-    if (this.turnTimeoutNotice || this.isTransitioning) return false;
+    if (this.turnTimeoutNotice) return false;
     if (this.multiplayerConfig && this.isTimerRunning && this.turnTimerTotal > 0 && !this.isPaused) {
       if (performance.now() >= this.turnDeadlineMs) {
         return false;
@@ -137,7 +138,7 @@ export class TurnManager {
     if (!this.isTransitioning) return;
     this.isTransitioning = false;
     this.transitionTimer = 0;
-    this.startActivePlayerTurn();
+    this.updateMultiplayerSnapshot();
   }
 
   public recordPenContact(penA: string, penB: string, speed: number): void {
@@ -231,7 +232,13 @@ export class TurnManager {
             ? bluePlayers.findIndex((pl) => pl.id === p.id)
             : redPlayers.findIndex((pl) => pl.id === p.id);
         const penRadius = PEN_SPECS[p.penType].radius;
-        const spawn = computeMultiplayerSpawn(p.team, Math.max(0, teamIdx), teamTotal, penRadius);
+        const spawn = computeMultiplayerSpawn(
+          p.team,
+          Math.max(0, teamIdx),
+          teamTotal,
+          penRadius,
+          this.physics.getArenaOrientation()
+        );
         return {
           id: p.id,
           penType: p.penType,
@@ -266,9 +273,10 @@ export class TurnManager {
       this.players = [];
 
       // Always rebuild solo/practice bodies cleanly in case previous match was 2v2/3v3
+      const orient = this.physics.getArenaOrientation();
       this.physics.configurePens([
-        { id: 'player', penType: soloPenType, spawn: PLAYER_SPAWN },
-        { id: 'bot', penType: botPenType, spawn: BOT_SPAWN },
+        { id: 'player', penType: soloPenType, spawn: transformSpawnForOrientation(PLAYER_SPAWN, orient) },
+        { id: 'bot', penType: botPenType, spawn: transformSpawnForOrientation(BOT_SPAWN, orient) },
       ]);
       this.physics.resetPens();
 
@@ -315,9 +323,10 @@ export class TurnManager {
     this.isTransitioning = false;
     this.turnTimeoutNotice = false;
     if (wasMultiplayer) {
+      const orient = this.physics.getArenaOrientation();
       this.physics.configurePens([
-        { id: 'player', penType: soloPenType, spawn: PLAYER_SPAWN },
-        { id: 'bot', penType: botPenType, spawn: BOT_SPAWN },
+        { id: 'player', penType: soloPenType, spawn: transformSpawnForOrientation(PLAYER_SPAWN, orient) },
+        { id: 'bot', penType: botPenType, spawn: transformSpawnForOrientation(BOT_SPAWN, orient) },
       ]);
     }
     this.physics.resetPens();
@@ -346,6 +355,8 @@ export class TurnManager {
     this.lastShooter = shooter;
     this.shotTimer = 0;
     this.settleTimer = 0;
+    this.isTransitioning = false;
+    this.transitionTimer = 0;
     this.isTimerRunning = false; // Stop timer immediately on shot release!
     this.lastAttacker = {};
 
@@ -411,14 +422,14 @@ export class TurnManager {
       return;
     }
 
-    // 3. Turn Transition Phase (smooth active player presentation banner)
+    // 3. Non-blocking HUD turn-highlight window (expires smoothly without pausing input or timer)
     if (this.isTransitioning) {
       this.transitionTimer -= dt;
       if (this.transitionTimer <= 0) {
         this.isTransitioning = false;
-        this.startActivePlayerTurn();
+        this.transitionTimer = 0;
+        this.updateMultiplayerSnapshot();
       }
-      return;
     }
 
     // 4. Live Turn Timer Countdown during PLAYER_TURN (Monotonic clock)
@@ -669,21 +680,10 @@ export class TurnManager {
     this.firstFallen = null;
     this.turnTimeoutNotice = false;
     this.isTransitioning = true;
-    this.transitionTimer = 1.05; // Brief, crisp turn transition animation
+    this.transitionTimer = 1.35; // Brief non-blocking HUD highlight pulse only
 
     this.events.onTurnTransition?.(player);
-
-    const teamLabel = player.team === 'blue' ? 'Team Blue' : 'Team Red';
-    this.state.update({
-      matchState: 'PLAYER_TURN',
-      activeTurn: playerId,
-      shotStatusText: `${player.name} (${teamLabel}) — Aim your pen!`,
-      isTurnTimerRunning: false,
-      isTurnTimeoutNotice: false,
-      turnTimeRemaining: this.turnTimerTotal,
-      turnTimeTotal: this.turnTimerTotal,
-    });
-    this.updateMultiplayerSnapshot();
+    this.startActivePlayerTurn();
   }
 
   private startActivePlayerTurn(): void {

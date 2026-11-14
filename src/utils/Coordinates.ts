@@ -118,9 +118,15 @@ export function describeAnchorZone(
 /**
  * Checks whether an XZ coordinate is within the tabletop boundaries (with optional margin).
  */
-export function isInsideTableBounds(x: number, z: number, margin = 0): boolean {
+export function isInsideTableBounds(
+  x: number,
+  z: number,
+  margin = 0,
+  halfW = TABLE_HALF_W,
+  halfD = TABLE_HALF_D
+): boolean {
   return (
-    Math.abs(x) <= TABLE_HALF_W - margin &&
-    Math.abs(z) <= TABLE_HALF_D - margin
+    Math.abs(x) <= halfW - margin &&
+    Math.abs(z) <= halfD - margin
   );
 }

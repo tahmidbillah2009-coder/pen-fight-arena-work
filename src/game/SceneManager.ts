@@ -112,10 +112,10 @@ export class SceneManager {
     this.keyLight.shadow.mapSize.height = 1024;
     this.keyLight.shadow.camera.near = 8;
     this.keyLight.shadow.camera.far = 38;
-    this.keyLight.shadow.camera.left = -11.4;
-    this.keyLight.shadow.camera.right = 11.4;
-    this.keyLight.shadow.camera.top = 9.8;
-    this.keyLight.shadow.camera.bottom = -9.8;
+    this.keyLight.shadow.camera.left = -12.4;
+    this.keyLight.shadow.camera.right = 12.4;
+    this.keyLight.shadow.camera.top = 10.2;
+    this.keyLight.shadow.camera.bottom = -10.2;
     // Calibrated shadow bias & normalBias: prevents shadow acne and self-shadowing without detaching shadows
     this.keyLight.shadow.bias = -0.0001;
     this.keyLight.shadow.normalBias = 0.002;

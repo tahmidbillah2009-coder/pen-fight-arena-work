@@ -693,7 +693,9 @@ export class PenModel {
 
   public syncTransform(
     pos: { x: number; y: number; z: number },
-    rot: { x: number; y: number; z: number; w: number }
+    rot: { x: number; y: number; z: number; w: number },
+    halfW = TABLE_HALF_W,
+    halfD = TABLE_HALF_D
   ): void {
     this.group.position.set(pos.x, pos.y, pos.z);
     this.group.quaternion.set(rot.x, rot.y, rot.z, rot.w);
@@ -732,8 +734,8 @@ export class PenModel {
 
       // Smooth height fade and graceful boundary edge falloff
       const heightFade = Math.max(0, 1.0 - h * 1.8);
-      const edgeDistX = TABLE_HALF_W - Math.abs(pos.x);
-      const edgeDistZ = TABLE_HALF_D - Math.abs(pos.z);
+      const edgeDistX = halfW - Math.abs(pos.x);
+      const edgeDistZ = halfD - Math.abs(pos.z);
       const edgeFade = THREE.MathUtils.clamp(Math.min(edgeDistX, edgeDistZ) / 0.5 + 0.5, 0, 1);
 
       shadowMat.opacity = 0.62 * heightFade * edgeFade;

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { localToWorldPoint } from '../utils/Coordinates';
-import { TABLE_HALF_D, TABLE_HALF_W } from '../utils/Constants';
 import { DifficultyLevel } from '../game/GameState';
 import { PhysicsManager } from '../game/PhysicsManager';
 import { DIFFICULTY_CONFIGS, DifficultyConfig } from './Difficulty';
@@ -63,13 +62,14 @@ export class AIController {
     const bPose = this.physics.getPose('bot');
     const dist = Math.hypot(pPose.pos.x - bPose.pos.x, pPose.pos.z - bPose.pos.z);
 
+    const { halfW, halfD } = this.physics.getArenaBounds();
     const pMargin = Math.min(
-      TABLE_HALF_W - Math.abs(pPose.pos.x),
-      TABLE_HALF_D - Math.abs(pPose.pos.z)
+      halfW - Math.abs(pPose.pos.x),
+      halfD - Math.abs(pPose.pos.z)
     );
     const bMargin = Math.min(
-      TABLE_HALF_W - Math.abs(bPose.pos.x),
-      TABLE_HALF_D - Math.abs(bPose.pos.z)
+      halfW - Math.abs(bPose.pos.x),
+      halfD - Math.abs(bPose.pos.z)
     );
 
     // Never gamble the ability away while standing on the brink — recover normally instead.
@@ -93,6 +93,11 @@ export class AIController {
     if (pMargin < 1.5) chance *= 1.3;
 
     return Math.random() < THREE.MathUtils.clamp(chance, 0, 0.95);
+  }
+
+  public rotatePlannedShot(angleRad: number): void {
+    if (!this.active || !this.plannedShot) return;
+    this.plannedShot.launchDir.applyAxisAngle(_yAxis, angleRad).normalize();
   }
 
   public cancel(): void {

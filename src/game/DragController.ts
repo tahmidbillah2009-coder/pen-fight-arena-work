@@ -10,8 +10,6 @@ import {
   PenTypeId,
   powerRatioToLaunchSpeed,
   PowerZoneId,
-  TABLE_HALF_D,
-  TABLE_HALF_W,
 } from '../utils/Constants';
 import {
   clampLocalAnchor,
@@ -262,15 +260,16 @@ export class DragController {
     }
 
     // Clamp pointer aim indicator within desk bounds without moving the physical pen
+    const { halfW, halfD } = this.physics.getArenaBounds();
     const safeX = THREE.MathUtils.clamp(
       this.currentPointerWorld.x,
-      -TABLE_HALF_W + 0.35,
-      TABLE_HALF_W - 0.35
+      -halfW + 0.35,
+      halfW - 0.35
     );
     const safeZ = THREE.MathUtils.clamp(
       this.currentPointerWorld.z,
-      -TABLE_HALF_D + 0.35,
-      TABLE_HALF_D - 0.35
+      -halfD + 0.35,
+      halfD - 0.35
     );
     this.targetAnchorWorld.set(safeX, this.dragPlaneY, safeZ);
     this.lastAppliedForce = Math.min(DRAG_MAX_FORCE, DRAG_SPRING_STIFFNESS * this.dragDistance);

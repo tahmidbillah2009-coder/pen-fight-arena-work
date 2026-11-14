@@ -1,4 +1,11 @@
-import { PenTypeId, STARTER_PEN, TABLE_HALF_D, TABLE_HALF_W } from '../utils/Constants';
+import {
+  ArenaOrientation,
+  PenTypeId,
+  STARTER_PEN,
+  TABLE_HALF_D,
+  TABLE_HALF_W,
+  transformSpawnForOrientation,
+} from '../utils/Constants';
 import { AbilityHudState } from './GameState';
 
 export type GameMode =
@@ -259,13 +266,15 @@ export function rotateTurnQueue(
 
 /**
  * Computes strategic spawn coordinates on the desk arena for a pen.
- * Team Blue spawns on negative X (left half), Team Red on positive X (right half).
+ * In horizontal mode: Team Blue spawns on -X (left), Team Red on +X (right).
+ * In vertical mode: Team Blue spawns on +Z (bottom), Team Red on -Z (top).
  */
 export function computeMultiplayerSpawn(
   team: TeamId,
   indexInTeam: number,
   totalInTeam: number,
-  penRadius = 0.16
+  penRadius = 0.16,
+  orientation: ArenaOrientation = 'horizontal'
 ): { x: number; y: number; z: number; yaw: number } {
   const x = team === 'blue' ? -TABLE_HALF_W * 0.54 : TABLE_HALF_W * 0.54;
   const yaw = team === 'blue' ? 0.08 : Math.PI - 0.08;
@@ -282,5 +291,5 @@ export function computeMultiplayerSpawn(
     z = zOffsets[indexInTeam] ?? (indexInTeam - 1) * (TABLE_HALF_D * 0.5);
   }
 
-  return { x, y, z, yaw };
+  return transformSpawnForOrientation({ x, y, z, yaw }, orientation);
 }

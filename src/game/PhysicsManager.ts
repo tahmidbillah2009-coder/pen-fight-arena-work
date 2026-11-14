@@ -1,10 +1,12 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import {
+  ArenaOrientation,
   BOT_SPAWN,
   EDGE_DANGER_DISTANCE,
   EDGE_WARNING_DISTANCE,
   FLOOR_Y,
+  getArenaHalfExtents,
   GRAVITY_Y,
   OOB_MARGIN,
   OOB_Y_THRESHOLD,
@@ -20,6 +22,7 @@ import {
   TABLE_HALF_W,
   TABLE_RESTITUTION,
   TABLE_THICKNESS,
+  transformSpawnForOrientation,
 } from '../utils/Constants';
 import { CollisionCallbacks, CollisionManager } from './CollisionManager';
 import { EdgeDangerLevel, PlayerId } from './GameState';
@@ -104,6 +107,13 @@ export class PhysicsManager {
    * one of the ~24 candidate shots was the largest allocation burst of a bot turn. The world and
    * its static colliders are created once; only the two pens are re-seeded per candidate.
    */
+  private orientation: ArenaOrientation = 'horizontal';
+  private halfW = TABLE_HALF_W;
+  private halfD = TABLE_HALF_D;
+  private liveTableEnv: { tableBody: RAPIER.RigidBody; tableCol: RAPIER.Collider };
+  private predTableEnv: { tableBody: RAPIER.RigidBody; tableCol: RAPIER.Collider };
+  private simTableEnv: { tableBody: RAPIER.RigidBody; tableCol: RAPIER.Collider } | null = null;
+
   private simWorld: RAPIER.World | null = null;
   private simBodies: Record<PlayerId, RAPIER.RigidBody> | null = null;
 
@@ -135,7 +145,7 @@ export class PhysicsManager {
     this.world.numSolverIterations = 8;
     this.eventQueue = new RAPIER.EventQueue(true);
 
-    this.createEnvironmentColliders(this.world, this.collisions);
+    this.liveTableEnv = this.createEnvironmentColliders(this.world, this.collisions);
 
     this.bodies = {
       player: this.createPenBody(
@@ -164,7 +174,7 @@ export class PhysicsManager {
     this.predWorld.numSolverIterations = 6;
     this.predEventQueue = new RAPIER.EventQueue(true);
 
-    this.createEnvironmentColliders(this.predWorld);
+    this.predTableEnv = this.createEnvironmentColliders(this.predWorld);
     this.predBodies = {
       player: this.createPenBody(
         this.predWorld,
@@ -183,6 +193,102 @@ export class PhysicsManager {
         this.predColliderHandles.bot
       ),
     };
+  }
+
+  public getArenaOrientation(): ArenaOrientation {
+    return this.orientation;
+  }
+
+  public getArenaBounds(): { halfW: number; halfD: number; orientation: ArenaOrientation } {
+    return { halfW: this.halfW, halfD: this.halfD, orientation: this.orientation };
+  }
+
+  /**
+   * Switches the physical tabletop collider bounds and rigidly rotates every pen's pose,
+   * linear velocity, angular velocity, and respawn coordinates by ±90° around Y without
+   * disturbing tabletop contact height or resetting match state.
+   */
+  public setOrientation(next: ArenaOrientation): void {
+    if (next === this.orientation) return;
+    const angle = next === 'vertical' ? Math.PI * 0.5 : -Math.PI * 0.5;
+    // Rotation around +Y by ±PI/2: x' = x*cos + z*sin, z' = -x*sin + z*cos
+    const sinA = angle > 0 ? 1 : -1;
+
+    this.orientation = next;
+    const extents = getArenaHalfExtents(next);
+    this.halfW = extents.halfW;
+    this.halfD = extents.halfD;
+
+    // 1. Update tabletop colliders in live, prediction, and AI candidate simulation worlds
+    this.rebuildTableCollider(this.world, this.liveTableEnv, this.collisions);
+    this.rebuildTableCollider(this.predWorld, this.predTableEnv);
+    if (this.simWorld && this.simTableEnv) {
+      this.rebuildTableCollider(this.simWorld, this.simTableEnv);
+    }
+
+    // 2. Rotate stored respawn coordinates
+    for (const id of Object.keys(this.penSpawns)) {
+      const sp = this.penSpawns[id];
+      this.penSpawns[id] = {
+        x: sp.z * sinA,
+        y: sp.y,
+        z: -sp.x * sinA,
+        yaw: sp.yaw + angle,
+      };
+    }
+
+    // 3. Rotate all live rigid bodies cleanly in-place (preserving sleeping/awake & velocity)
+    const qDelta = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+    for (const body of Object.values(this.bodies)) {
+      const wasSleeping = body.isSleeping();
+      const wake = !wasSleeping;
+      const p = body.translation();
+      const r = body.rotation();
+      const lv = body.linvel();
+      const av = body.angvel();
+
+      this._quatTmp.set(r.x, r.y, r.z, r.w).premultiply(qDelta);
+
+      body.setTranslation({ x: p.z * sinA, y: p.y, z: -p.x * sinA }, wake);
+      body.setRotation(
+        { x: this._quatTmp.x, y: this._quatTmp.y, z: this._quatTmp.z, w: this._quatTmp.w },
+        wake
+      );
+      if (wake) {
+        body.setLinvel({ x: lv.z * sinA, y: lv.y, z: -lv.x * sinA }, true);
+        body.setAngvel({ x: av.z * sinA, y: av.y, z: -av.x * sinA }, true);
+      }
+    }
+
+    // 4. Rotate cached pre-kinematics snapshot if present
+    for (const rec of Object.values(this._preKinematics)) {
+      const px = rec.pos.x;
+      const pz = rec.pos.z;
+      rec.pos.set(pz * sinA, rec.pos.y, -px * sinA);
+      rec.quat.premultiply(qDelta);
+      const vx = rec.vel.x;
+      const vz = rec.vel.z;
+      rec.vel.set(vz * sinA, rec.vel.y, -vx * sinA);
+      const wx = rec.angVel.x;
+      const wz = rec.angVel.z;
+      rec.angVel.set(wz * sinA, rec.angVel.y, -wx * sinA);
+    }
+  }
+
+  private rebuildTableCollider(
+    world: RAPIER.World,
+    env: { tableBody: RAPIER.RigidBody; tableCol: RAPIER.Collider },
+    collisions?: CollisionManager
+  ): void {
+    if (collisions) {
+      collisions.unregisterSurface('table');
+    }
+    world.removeCollider(env.tableCol, true);
+    const tableDesc = RAPIER.ColliderDesc.cuboid(this.halfW, TABLE_THICKNESS * 0.5, this.halfD)
+      .setFriction(TABLE_FRICTION)
+      .setRestitution(TABLE_RESTITUTION);
+    env.tableCol = world.createCollider(tableDesc, env.tableBody);
+    collisions?.registerCollider(env.tableCol.handle, 'table');
   }
 
   /**
@@ -298,12 +404,12 @@ export class PhysicsManager {
   private createEnvironmentColliders(
     world: RAPIER.World,
     collisions?: CollisionManager
-  ): void {
+  ): { tableBody: RAPIER.RigidBody; tableCol: RAPIER.Collider } {
     // Tabletop collider: top face is strictly at Y = 0.0
     const tableBody = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(0, -TABLE_THICKNESS * 0.5, 0)
     );
-    const tableDesc = RAPIER.ColliderDesc.cuboid(TABLE_HALF_W, TABLE_THICKNESS * 0.5, TABLE_HALF_D)
+    const tableDesc = RAPIER.ColliderDesc.cuboid(this.halfW, TABLE_THICKNESS * 0.5, this.halfD)
       .setFriction(TABLE_FRICTION)
       .setRestitution(TABLE_RESTITUTION);
     const tableCol = world.createCollider(tableDesc, tableBody);
@@ -318,6 +424,8 @@ export class PhysicsManager {
       .setRestitution(0.15);
     const floorCol = world.createCollider(floorDesc, floorBody);
     collisions?.registerCollider(floorCol.handle, 'floor');
+
+    return { tableBody, tableCol };
   }
 
   private createPenBody(
@@ -595,14 +703,18 @@ export class PhysicsManager {
 
   public resetPens(): void {
     for (const id in this.bodies) {
-      const spawn = this.penSpawns[id] ?? (id === 'player' ? PLAYER_SPAWN : BOT_SPAWN);
+      const spawn =
+        this.penSpawns[id] ??
+        transformSpawnForOrientation(id === 'player' ? PLAYER_SPAWN : BOT_SPAWN, this.orientation);
       this.resetSinglePen(id, spawn);
     }
     this.accumulator = 0;
   }
 
   public respawnPen(id: PlayerId): void {
-    const spawn = this.penSpawns[id] ?? (id === 'player' ? PLAYER_SPAWN : BOT_SPAWN);
+    const spawn =
+      this.penSpawns[id] ??
+      transformSpawnForOrientation(id === 'player' ? PLAYER_SPAWN : BOT_SPAWN, this.orientation);
     this.resetSinglePen(id, spawn);
   }
 
@@ -782,12 +894,12 @@ export class PhysicsManager {
       return { margin: 0, level: 'DANGER', isOutsideBounds: true };
     }
     const pos = b.translation();
-    const dx = TABLE_HALF_W - Math.abs(pos.x);
-    const dz = TABLE_HALF_D - Math.abs(pos.z);
+    const dx = this.halfW - Math.abs(pos.x);
+    const dz = this.halfD - Math.abs(pos.z);
     const margin = Math.min(dx, dz);
     const isOutsideBounds =
-      Math.abs(pos.x) > TABLE_HALF_W + OOB_MARGIN ||
-      Math.abs(pos.z) > TABLE_HALF_D + OOB_MARGIN ||
+      Math.abs(pos.x) > this.halfW + OOB_MARGIN ||
+      Math.abs(pos.z) > this.halfD + OOB_MARGIN ||
       pos.y < OOB_Y_THRESHOLD;
 
     let level: EdgeDangerLevel = 'SAFE';
@@ -960,8 +1072,8 @@ export class PhysicsManager {
       const speed = Math.hypot(lv.x, lv.y, lv.z);
       const angSpeed = Math.hypot(av.x, av.y, av.z);
       const offTable =
-        Math.abs(pos.x) > TABLE_HALF_W + OOB_MARGIN ||
-        Math.abs(pos.z) > TABLE_HALF_D + OOB_MARGIN ||
+        Math.abs(pos.x) > this.halfW + OOB_MARGIN ||
+        Math.abs(pos.z) > this.halfD + OOB_MARGIN ||
         pos.y < OOB_Y_THRESHOLD;
 
       if (stepIdx % sampleInterval === 0 || stepIdx === steps) {
@@ -993,8 +1105,8 @@ export class PhysicsManager {
     const isOffTable =
       hitFloor ||
       finalPos.y < OOB_Y_THRESHOLD ||
-      Math.abs(finalPos.x) > TABLE_HALF_W + OOB_MARGIN ||
-      Math.abs(finalPos.z) > TABLE_HALF_D + OOB_MARGIN;
+      Math.abs(finalPos.x) > this.halfW + OOB_MARGIN ||
+      Math.abs(finalPos.z) > this.halfD + OOB_MARGIN;
 
     return {
       points,
@@ -1100,8 +1212,8 @@ export class PhysicsManager {
       const speed = Math.hypot(lv.x, lv.y, lv.z);
       const angSpeed = Math.hypot(av.x, av.y, av.z);
       const offTable =
-        Math.abs(pos.x) > TABLE_HALF_W + OOB_MARGIN ||
-        Math.abs(pos.z) > TABLE_HALF_D + OOB_MARGIN ||
+        Math.abs(pos.x) > this.halfW + OOB_MARGIN ||
+        Math.abs(pos.z) > this.halfD + OOB_MARGIN ||
         pos.y < OOB_Y_THRESHOLD;
 
       if (stepIdx % sampleInterval === 0 || stepIdx === steps - 1) {
@@ -1126,8 +1238,8 @@ export class PhysicsManager {
     const isOffTable =
       hitFloor ||
       finalPos.y < OOB_Y_THRESHOLD ||
-      Math.abs(finalPos.x) > TABLE_HALF_W + OOB_MARGIN ||
-      Math.abs(finalPos.z) > TABLE_HALF_D + OOB_MARGIN;
+      Math.abs(finalPos.x) > this.halfW + OOB_MARGIN ||
+      Math.abs(finalPos.z) > this.halfD + OOB_MARGIN;
 
     return {
       points,
@@ -1188,15 +1300,15 @@ export class PhysicsManager {
       const bt = bBody.translation();
       if (
         pt.y < OOB_Y_THRESHOLD ||
-        Math.abs(pt.x) > TABLE_HALF_W + OOB_MARGIN ||
-        Math.abs(pt.z) > TABLE_HALF_D + OOB_MARGIN
+        Math.abs(pt.x) > this.halfW + OOB_MARGIN ||
+        Math.abs(pt.z) > this.halfD + OOB_MARGIN
       ) {
         playerFell = true;
       }
       if (
         bt.y < OOB_Y_THRESHOLD ||
-        Math.abs(bt.x) > TABLE_HALF_W + OOB_MARGIN ||
-        Math.abs(bt.z) > TABLE_HALF_D + OOB_MARGIN
+        Math.abs(bt.x) > this.halfW + OOB_MARGIN ||
+        Math.abs(bt.z) > this.halfD + OOB_MARGIN
       ) {
         botFell = true;
       }
@@ -1222,7 +1334,7 @@ export class PhysicsManager {
       // Mirrors the live world's coarse settings so candidate scoring matches gameplay.
       world.timestep = 1 / 60;
       world.numSolverIterations = 6;
-      this.createEnvironmentColliders(world);
+      this.simTableEnv = this.createEnvironmentColliders(world);
       this.simWorld = world;
       this.simBodies = {
         player: this.createPenBody(world, 'player', PLAYER_SPAWN, this.penSpecs.player),

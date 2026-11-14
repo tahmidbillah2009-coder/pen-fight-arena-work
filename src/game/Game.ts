@@ -16,7 +16,7 @@ import { detectRecommendedQuality, SceneManager } from './SceneManager';
 import { ShotTrailSystem } from './ShotTrails';
 import { TableEnvironment } from './Table';
 import { TurnManager } from './TurnManager';
-import { PenTypeId } from '../utils/Constants';
+import { ArenaOrientation, PenTypeId, resolveArenaOrientation } from '../utils/Constants';
 
 /** The AI always fields the same pen class so the match-up stays fair and consistent. */
 const BOT_PEN_TYPE = 'IRON_FORCE' as const;
@@ -63,6 +63,7 @@ export class PenFightGame {
   /** Resolved Motion Effects preference (camera shake / hitstop / shot-follow). */
   private motionEnabled = true;
   private abilityPreviewActive = false;
+  private arenaOrientation: ArenaOrientation = 'horizontal';
   private readonly trailTip = new THREE.Vector3();
   private readonly shotFocus = new THREE.Vector3();
   private resizeObserver: ResizeObserver | null = null;
@@ -94,8 +95,10 @@ export class PenFightGame {
     // Profile the device once; AUTO quality starts here and never climbs above this tier.
     this.qualityController = new QualityController(detectRecommendedQuality());
 
-    this.cameraManager = new CameraManager(width, height);
+    this.arenaOrientation = resolveArenaOrientation(width, height);
+    this.cameraManager = new CameraManager(width, height, this.arenaOrientation);
     this.tableEnv = new TableEnvironment(this.sceneManager.maxAnisotropy);
+    this.tableEnv.setOrientation(this.arenaOrientation);
     this.sceneManager.scene.add(this.tableEnv.group);
 
     this.playerPen = new PenModel('player', this.sceneManager.maxAnisotropy, this.settings.playerPenType, 'blue');
@@ -118,6 +121,9 @@ export class PenFightGame {
     this.sceneManager.scene.add(this.trailSystem.group);
 
     this.physics = new PhysicsManager(this.settings.playerPenType, BOT_PEN_TYPE);
+    this.physics.setOrientation(this.arenaOrientation);
+    this.physics.resetPens();
+    this.state.update({ arenaOrientation: this.arenaOrientation });
     this.abilitySystem = new AbilitySystem(
       this.physics,
       (id: PlayerId) => this.penTypes.get(id) ?? (id === 'bot' || id.startsWith('red') ? BOT_PEN_TYPE : this.settings.playerPenType),
@@ -140,7 +146,8 @@ export class PenFightGame {
       onStartPlayerTurn: (activeId: string) => {
         for (const [id, model] of this.penModels.entries()) {
           if (id === activeId) {
-            model.setHighlight(0.35);
+            const teamColor = model.team === 'red' ? 0xfb7185 : 0x60a5fa;
+            model.setHighlight(0.42, teamColor);
           } else {
             model.setHighlight(0);
           }
@@ -192,7 +199,8 @@ export class PenFightGame {
         this.audio.playTurnSwitch();
         for (const [id, model] of this.penModels.entries()) {
           if (id === player.id) {
-            model.setHighlight(0.32);
+            const teamColor = model.team === 'red' ? 0xfb7185 : 0x60a5fa;
+            model.setHighlight(0.45, teamColor);
           } else {
             model.setHighlight(0);
           }
@@ -224,18 +232,19 @@ export class PenFightGame {
       {
         canDrag: () => {
           const snap = this.state.getSnapshot();
-          return (
-            snap.matchState === 'PLAYER_TURN' &&
-            !snap.isTurnTimeoutNotice &&
-            !snap.multiplayer?.transitionPlayer
-          );
+          return snap.matchState === 'PLAYER_TURN' && !snap.isTurnTimeoutNotice;
         },
         canAcceptShot: () => this.turnManager.canAcceptShot(),
         onGrabStart: () => {
           this.audio.unlock();
           this.audio.playGrab();
+          this.turnManager.dismissTurnTransition();
           const activeId = this.turnManager.getActivePlayerId();
-          this.penModels.get(activeId)?.setHighlight(0.42);
+          const activeModel = this.penModels.get(activeId);
+          if (activeModel) {
+            const teamColor = activeModel.team === 'red' ? 0xfb7185 : 0x60a5fa;
+            activeModel.setHighlight(0.48, teamColor);
+          }
         },
         onTelemetry: (telemetry) => {
           this.state.updateDragTelemetry(telemetry);
@@ -286,8 +295,7 @@ export class PenFightGame {
         w = Math.round(w);
         h = Math.round(h);
         if (w > 0 && h > 0) {
-          this.cameraManager.resize(w, h);
-          this.sceneManager.resize(w, h);
+          this.applyViewportMetrics(w, h, false);
         }
       }
     });
@@ -301,14 +309,33 @@ export class PenFightGame {
     this.tick();
   }
 
+  private applyViewportMetrics(width: number, height: number, snapCamera: boolean): void {
+    const nextOrientation = resolveArenaOrientation(width, height, this.arenaOrientation);
+    if (nextOrientation !== this.arenaOrientation) {
+      const angleRad = nextOrientation === 'vertical' ? Math.PI * 0.5 : -Math.PI * 0.5;
+      this.dragController.cancelDrag();
+      this.aiController.rotatePlannedShot(angleRad);
+
+      this.arenaOrientation = nextOrientation;
+      this.tableEnv.setOrientation(nextOrientation);
+      this.physics.setOrientation(nextOrientation);
+      this.cameraManager.setArenaOrientation(nextOrientation, snapCamera);
+
+      this.syncVisualTransforms();
+      this.sceneManager.requestShadowUpdate();
+      this.state.update({ arenaOrientation: nextOrientation });
+    }
+    this.cameraManager.resize(width, height);
+    this.sceneManager.resize(width, height);
+  }
+
   private handleViewportResize = (): void => {
     if (!this.initialized || this.disposed) return;
     const rect = this.container.getBoundingClientRect();
     const w = Math.round(rect.width) || this.container.clientWidth || window.innerWidth;
     const h = Math.round(rect.height) || this.container.clientHeight || window.innerHeight;
     if (w > 0 && h > 0) {
-      this.cameraManager.resize(w, h);
-      this.sceneManager.resize(w, h);
+      this.applyViewportMetrics(w, h, false);
     }
   };
 
@@ -584,9 +611,10 @@ export class PenFightGame {
    * physics world in the same frame.
    */
   private syncVisualTransforms(): { player: BodyPose; bot: BodyPose } {
+    const { halfW, halfD } = this.physics.getArenaBounds();
     for (const [id, model] of this.penModels.entries()) {
       const pose = this.physics.getPose(id);
-      model.syncTransform(pose.pos, pose.rot);
+      model.syncTransform(pose.pos, pose.rot, halfW, halfD);
     }
     const playerPose = this.physics.getPose(
       this.penModels.has('player') ? 'player' : this.turnManager?.getActivePlayerId() ?? 'blue_1'
@@ -725,6 +753,15 @@ export class PenFightGame {
     }
 
     const dragView = this.dragController.getStateView();
+    if (snap.matchState === 'PLAYER_TURN' && !dragView.isDragging) {
+      const activeId = this.turnManager.getActivePlayerId();
+      const activeModel = this.penModels.get(activeId);
+      if (activeModel) {
+        const pulse = 0.28 + 0.2 * (0.5 + 0.5 * Math.sin(now * 0.0065));
+        const teamColor = activeModel.team === 'red' ? 0xfb7185 : 0x60a5fa;
+        activeModel.setHighlight(pulse, teamColor);
+      }
+    }
     this.aimController.update(dragView, this.physics);
     if (dragView.isDragging) {
       this.telemetryTimer += dt;

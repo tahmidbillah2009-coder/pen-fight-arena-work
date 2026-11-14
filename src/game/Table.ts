@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import {
+  ArenaOrientation,
   EDGE_WARNING_DISTANCE,
   FLOOR_Y,
   TABLE_DEPTH,
@@ -13,6 +14,9 @@ import { EdgeDangerLevel } from './GameState';
 
 export class TableEnvironment {
   public readonly group = new THREE.Group();
+  private readonly deskGroup = new THREE.Group();
+  private readonly wallGroup = new THREE.Group();
+  private orientation: ArenaOrientation = 'horizontal';
   private readonly disposables: Array<{ dispose: () => void }> = [];
   private readonly edgeStrips: {
     left: THREE.MeshBasicMaterial;
@@ -24,9 +28,21 @@ export class TableEnvironment {
   private readonly _dangerColor = new THREE.Color(0xef4444);
 
   constructor(maxAnisotropy: number) {
+    this.group.add(this.deskGroup);
+    this.group.add(this.wallGroup);
     this.buildDesk(maxAnisotropy);
     this.edgeStrips = this.buildEdgeWarningStrips();
     this.buildClassroomBackdrop(maxAnisotropy);
+  }
+
+  public setOrientation(orientation: ArenaOrientation): void {
+    if (this.orientation === orientation) return;
+    this.orientation = orientation;
+    // Rotate entire desk assembly +90° around Y so its 19.5 long axis runs vertically (Z)
+    // and Player 1's half maps cleanly to +Z (bottom), Player 2's to -Z (top).
+    this.deskGroup.rotation.y = orientation === 'vertical' ? Math.PI * 0.5 : 0;
+    // Slide back wall back by 3.8u when vertical so the chalkboard clears the -9.75 table edge.
+    this.wallGroup.position.z = orientation === 'vertical' ? -3.8 : 0;
   }
 
   private createWoodTexture(maxAnisotropy: number): THREE.CanvasTexture {
@@ -186,7 +202,7 @@ export class TableEnvironment {
     tabletop.position.set(0, -TABLE_THICKNESS * 0.5, 0);
     tabletop.receiveShadow = true;
     tabletop.castShadow = true;
-    this.group.add(tabletop);
+    this.deskGroup.add(tabletop);
     this.disposables.push(topGeo, topMat);
 
     // 2. Dark walnut edge trim molding slightly inset below the top surface
@@ -200,7 +216,7 @@ export class TableEnvironment {
     trim.position.set(0, -TABLE_THICKNESS + 0.09, 0);
     trim.receiveShadow = true;
     trim.castShadow = true;
-    this.group.add(trim);
+    this.deskGroup.add(trim);
     this.disposables.push(trimGeo, trimMat);
 
     // 3. Merged steel apron & 4 tubular legs (1 single draw call instead of 5)
@@ -248,7 +264,7 @@ export class TableEnvironment {
     }
     const steelMesh = new THREE.Mesh(mergedSteelGeo, steelMat);
     steelMesh.receiveShadow = true;
-    this.group.add(steelMesh);
+    this.deskGroup.add(steelMesh);
     this.disposables.push(mergedSteelGeo, steelMat);
 
     const mergedGlideGeo = BufferGeometryUtils.mergeGeometries(glideGeometries, false) ?? glideGeometries[0];
@@ -256,7 +272,7 @@ export class TableEnvironment {
       if (g !== mergedGlideGeo) g.dispose();
     }
     const glideMesh = new THREE.Mesh(mergedGlideGeo, glideMat);
-    this.group.add(glideMesh);
+    this.deskGroup.add(glideMesh);
     this.disposables.push(mergedGlideGeo, glideMat);
 
     // 5. Soft contact shadow beneath the desk on the classroom floor
@@ -271,7 +287,7 @@ export class TableEnvironment {
     const deskFloorShadow = new THREE.Mesh(shadowGeo, shadowMat);
     deskFloorShadow.rotation.x = -Math.PI * 0.5;
     deskFloorShadow.position.set(0, FLOOR_Y + 0.02, 0);
-    this.group.add(deskFloorShadow);
+    this.deskGroup.add(deskFloorShadow);
     this.disposables.push(shadowGeo, shadowMat);
   }
 
@@ -316,8 +332,16 @@ export class TableEnvironment {
     const bottomMesh = new THREE.Mesh(frontGeo, bottomMat);
     bottomMesh.position.set(0, 0.008, TABLE_HALF_D - stripThick * 0.5);
 
-    this.group.add(leftMesh, rightMesh, topMesh, bottomMesh);
+    this.deskGroup.add(leftMesh, rightMesh, topMesh, bottomMesh);
     return { left: leftMat, right: rightMat, top: topMat, bottom: bottomMat };
+  }
+
+  private toDeskLocalX(pos: { x: number; z: number }): number {
+    return this.orientation === 'vertical' ? -pos.z : pos.x;
+  }
+
+  private toDeskLocalZ(pos: { x: number; z: number }): number {
+    return this.orientation === 'vertical' ? pos.x : pos.z;
   }
 
   public updateEdgeWarning(
@@ -329,15 +353,20 @@ export class TableEnvironment {
   ): void {
     const pulse = 0.65 + 0.35 * Math.sin(nowMs * 0.012);
 
-    const pLeft = TABLE_HALF_W + playerPos.x;
-    const pRight = TABLE_HALF_W - playerPos.x;
-    const pTop = TABLE_HALF_D + playerPos.z;
-    const pBottom = TABLE_HALF_D - playerPos.z;
+    const px = this.toDeskLocalX(playerPos);
+    const pz = this.toDeskLocalZ(playerPos);
+    const bx = this.toDeskLocalX(botPos);
+    const bz = this.toDeskLocalZ(botPos);
 
-    const bLeft = TABLE_HALF_W + botPos.x;
-    const bRight = TABLE_HALF_W - botPos.x;
-    const bTop = TABLE_HALF_D + botPos.z;
-    const bBottom = TABLE_HALF_D - botPos.z;
+    const pLeft = TABLE_HALF_W + px;
+    const pRight = TABLE_HALF_W - px;
+    const pTop = TABLE_HALF_D + pz;
+    const pBottom = TABLE_HALF_D - pz;
+
+    const bLeft = TABLE_HALF_W + bx;
+    const bRight = TABLE_HALF_W - bx;
+    const bTop = TABLE_HALF_D + bz;
+    const bBottom = TABLE_HALF_D - bz;
 
     this.applyEdgeStrip(this.edgeStrips.left, pLeft, playerLevel, bLeft, botLevel, pulse);
     this.applyEdgeStrip(this.edgeStrips.right, pRight, playerLevel, bRight, botLevel, pulse);
@@ -366,10 +395,10 @@ export class TableEnvironment {
       this.applyEdgeStrip(mat, bestDist, bestLevel, Infinity, 'SAFE', pulse);
     };
 
-    evalEdge(this.edgeStrips.left, (p) => TABLE_HALF_W + p.x);
-    evalEdge(this.edgeStrips.right, (p) => TABLE_HALF_W - p.x);
-    evalEdge(this.edgeStrips.top, (p) => TABLE_HALF_D + p.z);
-    evalEdge(this.edgeStrips.bottom, (p) => TABLE_HALF_D - p.z);
+    evalEdge(this.edgeStrips.left, (p) => TABLE_HALF_W + this.toDeskLocalX(p));
+    evalEdge(this.edgeStrips.right, (p) => TABLE_HALF_W - this.toDeskLocalX(p));
+    evalEdge(this.edgeStrips.top, (p) => TABLE_HALF_D + this.toDeskLocalZ(p));
+    evalEdge(this.edgeStrips.bottom, (p) => TABLE_HALF_D - this.toDeskLocalZ(p));
   }
 
   /**
@@ -428,7 +457,7 @@ export class TableEnvironment {
     const backWall = new THREE.Mesh(wallGeo, wallMat);
     backWall.position.set(0, FLOOR_Y + 12, -13.5);
     backWall.receiveShadow = true;
-    this.group.add(backWall);
+    this.wallGroup.add(backWall);
     this.disposables.push(wallGeo, wallMat);
 
     // 3. Stylized Chalkboard mounted on back wall
@@ -441,7 +470,7 @@ export class TableEnvironment {
     });
     const board = new THREE.Mesh(boardGeo, boardMat);
     board.position.set(-1.5, FLOOR_Y + 8.8, -13.0);
-    this.group.add(board);
+    this.wallGroup.add(board);
     this.disposables.push(boardGeo, boardMat);
 
     // Merged classroom wood trims (baseboard + chalkboard frame)
@@ -460,7 +489,7 @@ export class TableEnvironment {
     baseboardGeo.dispose();
     frameGeo.dispose();
     const mergedTrimMesh = new THREE.Mesh(mergedTrimGeo, trimMat);
-    this.group.add(mergedTrimMesh);
+    this.wallGroup.add(mergedTrimMesh);
     this.disposables.push(mergedTrimGeo, trimMat);
 
     // 4. Sunlit Classroom Window Frame on upper right of back wall
@@ -484,7 +513,7 @@ export class TableEnvironment {
     mullionVGeo.dispose();
     mullionHGeo.dispose();
     const winFrame = new THREE.Mesh(mergedWindowGeo, winFrameMat);
-    this.group.add(winFrame);
+    this.wallGroup.add(winFrame);
     this.disposables.push(mergedWindowGeo, winFrameMat);
 
     const paneGeo = new THREE.PlaneGeometry(6.0, 6.8);
@@ -493,7 +522,7 @@ export class TableEnvironment {
     });
     const pane = new THREE.Mesh(paneGeo, paneMat);
     pane.position.set(11.5, FLOOR_Y + 9.2, -12.95);
-    this.group.add(pane);
+    this.wallGroup.add(pane);
     this.disposables.push(paneGeo, paneMat);
   }
 

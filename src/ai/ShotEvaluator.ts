@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import {
   PEN_HALF_LENGTH,
   powerRatioToLaunchSpeed,
-  TABLE_HALF_D,
-  TABLE_HALF_W,
 } from '../utils/Constants';
 import { PhysicsManager } from '../game/PhysicsManager';
 import { DifficultyConfig } from './Difficulty';
@@ -15,9 +13,9 @@ export interface PlannedAIShot {
   impulseMag: number;
 }
 
-function edgeMarginScore(x: number, z: number): number {
-  const dx = TABLE_HALF_W - Math.abs(x);
-  const dz = TABLE_HALF_D - Math.abs(z);
+function edgeMarginScore(x: number, z: number, halfW: number, halfD: number): number {
+  const dx = halfW - Math.abs(x);
+  const dz = halfD - Math.abs(z);
   return Math.min(dx, dz); // Negative means off table, positive means distance to closest edge
 }
 
@@ -43,8 +41,9 @@ export class ShotEvaluator {
     const dist = Math.max(0.5, toPlayer.length());
     const baseDir = toPlayer.clone().normalize();
 
-    const pMarginNow = edgeMarginScore(pPose.pos.x, pPose.pos.z);
-    const bMarginNow = edgeMarginScore(bPose.pos.x, bPose.pos.z);
+    const { halfW, halfD } = physics.getArenaBounds();
+    const pMarginNow = edgeMarginScore(pPose.pos.x, pPose.pos.z, halfW, halfD);
+    const bMarginNow = edgeMarginScore(bPose.pos.x, bPose.pos.z, halfW, halfD);
 
     // Easy & Normal: strategic edge-margin- & distance-aware selection across Low/Medium/High tiers
     if (config.level === 'EASY' || config.level === 'NORMAL') {
@@ -97,8 +96,8 @@ export class ShotEvaluator {
     const pAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(pQuat).setY(0).normalize();
 
     const edgePush = new THREE.Vector3();
-    const dxEdge = TABLE_HALF_W - Math.abs(pPose.pos.x);
-    const dzEdge = TABLE_HALF_D - Math.abs(pPose.pos.z);
+    const dxEdge = halfW - Math.abs(pPose.pos.x);
+    const dzEdge = halfD - Math.abs(pPose.pos.z);
     if (dxEdge < dzEdge) {
       edgePush.set(pPose.pos.x >= 0 ? 1 : -1, 0, 0);
     } else {
@@ -195,8 +194,8 @@ export class ShotEvaluator {
           score -= 4000;
         }
 
-        const pMargin = edgeMarginScore(res.playerPos.x, res.playerPos.z);
-        const bMargin = edgeMarginScore(res.botPos.x, res.botPos.z);
+        const pMargin = edgeMarginScore(res.playerPos.x, res.playerPos.z, halfW, halfD);
+        const bMargin = edgeMarginScore(res.botPos.x, res.botPos.z, halfW, halfD);
 
         score += (5.0 - pMargin) * 145;
         score += Math.min(bMargin, 3.0) * 105;
@@ -221,7 +220,7 @@ export class ShotEvaluator {
           cand.launchDir,
           Math.min(estTravel, dist + 2.2)
         );
-        const bMargin = edgeMarginScore(estBotEnd.x, estBotEnd.z);
+        const bMargin = edgeMarginScore(estBotEnd.x, estBotEnd.z, halfW, halfD);
 
         // Drive inland opponents with High/Max power; use controlled Medium near edges to finish safely
         let idealPower: number;

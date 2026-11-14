@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TABLE_HALF_D, TABLE_HALF_W } from '../utils/Constants';
+import { ArenaOrientation, getArenaHalfExtents } from '../utils/Constants';
 
 export class CameraManager {
   public readonly camera: THREE.PerspectiveCamera;
@@ -12,6 +12,7 @@ export class CameraManager {
   private shakeIntensity = 0;
   private menuOrbitTime = 0;
   private isMenuMode = true;
+  private arenaOrientation: ArenaOrientation = 'horizontal';
   private aspect = 1;
   private viewportWidth = 1280;
   private viewportHeight = 720;
@@ -27,19 +28,37 @@ export class CameraManager {
   private readonly _up = new THREE.Vector3();
   private readonly _corner = new THREE.Vector3();
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, initialOrientation: ArenaOrientation = 'horizontal') {
     this.viewportWidth = Math.max(width, 1);
     this.viewportHeight = Math.max(height, 1);
     this.aspect = this.viewportWidth / this.viewportHeight;
+    this.arenaOrientation = initialOrientation;
     this.camera = new THREE.PerspectiveCamera(36, this.aspect, 0.2, 160);
     this.recomputeFraming();
     this.currentPosition.copy(this.targetPosition);
+    this.currentLookAt.copy(this.baseLookAt);
     this.camera.position.copy(this.currentPosition);
     this.camera.lookAt(this.currentLookAt);
   }
 
   public setMenuMode(enabled: boolean): void {
     this.isMenuMode = enabled;
+  }
+
+  public setArenaOrientation(orientation: ArenaOrientation, snapImmediate = false): void {
+    if (this.arenaOrientation === orientation) return;
+    this.arenaOrientation = orientation;
+    this.recomputeFraming();
+    if (snapImmediate) {
+      this.currentPosition.copy(this.targetPosition);
+      this.currentLookAt.copy(this.baseLookAt);
+      this.camera.position.copy(this.currentPosition);
+      this.camera.lookAt(this.currentLookAt);
+    }
+  }
+
+  public getArenaOrientation(): ArenaOrientation {
+    return this.arenaOrientation;
   }
 
   public resize(width: number, height: number): void {
@@ -52,21 +71,43 @@ export class CameraManager {
     this.camera.aspect = this.aspect;
     this.recomputeFraming();
     // If orientation or window size changed significantly, snap closer so it settles instantly
-    if (this.currentPosition.distanceTo(this.targetPosition) > 10) {
-      this.currentPosition.lerp(this.targetPosition, 0.75);
+    if (this.currentPosition.distanceTo(this.targetPosition) > 8) {
+      this.currentPosition.lerp(this.targetPosition, 0.85);
     }
   }
 
   private recomputeFraming(): void {
-    // Slightly widen FOV on tall portrait mobile screens to preserve crisp perspective without excessive camera distance
+    const isVertical = this.arenaOrientation === 'vertical';
     const isPortrait = this.aspect < 1.0;
-    const portraitBlend = THREE.MathUtils.clamp((1.0 - this.aspect) / 0.55, 0, 1);
-    const fov = THREE.MathUtils.lerp(36, 43, portraitBlend);
+
+    let fov: number;
+    let pitchDeg: number;
+    let fillH: number;
+    let fillV: number;
+
+    if (isVertical) {
+      // Dedicated portrait framing: slightly steeper isometric angle + calibrated FOV so the vertical
+      // 12.5 x 19.5 tabletop fills mobile/tablet portrait height naturally while leaving clean top/bottom HUD bands.
+      const narrowBlend = THREE.MathUtils.clamp((0.78 - this.aspect) / 0.34, 0, 1);
+      fov = THREE.MathUtils.lerp(39, 44, narrowBlend);
+      pitchDeg = THREE.MathUtils.lerp(52, 56, narrowBlend);
+      fillH = 0.93;
+      fillV = 0.78;
+      this.baseLookAt.set(0, -0.32, 0.35);
+    } else {
+      const portraitBlend = THREE.MathUtils.clamp((1.0 - this.aspect) / 0.55, 0, 1);
+      fov = THREE.MathUtils.lerp(36, 41, portraitBlend);
+      pitchDeg = 47;
+      const isShortLandscape = !isPortrait && this.viewportHeight < 500;
+      fillH = 0.88;
+      fillV = isShortLandscape ? 0.76 : 0.82;
+      this.baseLookAt.set(0, -0.32, 0.65);
+    }
+
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
 
-    // Fixed isometric pitch angle (~47 deg)
-    const pitch = THREE.MathUtils.degToRad(47);
+    const pitch = THREE.MathUtils.degToRad(pitchDeg);
     // Direction from lookAt toward camera: (0, sin(pitch), cos(pitch))
     const camOffsetUnitY = Math.sin(pitch);
     const camOffsetUnitZ = Math.cos(pitch);
@@ -80,14 +121,10 @@ export class CameraManager {
     const tanHalfV = Math.tan(vFovRad * 0.5);
     const tanHalfH = tanHalfV * this.aspect;
 
-    // Reserve clean screen margin for top HUD / bottom power bar
-    const isShortLandscape = !isPortrait && this.viewportHeight < 500;
-    const fillH = isPortrait ? 0.92 : 0.88;
-    const fillV = isShortLandscape ? 0.76 : 0.82;
-
-    // Bounding box of full playable tabletop + edge margin (for pen sweeps & visible desk edge)
-    const halfW = TABLE_HALF_W + 0.35;
-    const halfD = TABLE_HALF_D + 0.35;
+    // Bounding box of full playable tabletop + edge margin in the active arena orientation
+    const extents = getArenaHalfExtents(this.arenaOrientation);
+    const halfW = extents.halfW + 0.35;
+    const halfD = extents.halfD + 0.35;
     const ys = [-0.60, 0.35];
 
     let requiredDist = 12.0;
