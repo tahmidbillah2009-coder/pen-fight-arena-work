@@ -9,7 +9,6 @@ import {
   Play,
   Settings as SettingsIcon,
   Sparkles,
-  Zap,
 } from 'lucide-react';
 import {
   GameMode,
@@ -417,30 +416,22 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
                   </p>
                 </div>
 
-                {/* Passive Ability View */}
-                <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3 space-y-1">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-sky-300">
-                    <PenTool className="h-3.5 w-3.5" />
-                    <span>Passive: {penSpec.passive.name}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-normal">
-                    {penSpec.passive.summary}
-                  </p>
-                </div>
-
-                {/* Active Special Shot View */}
-                <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
-                      <Zap className="h-3.5 w-3.5" />
-                      <span>Special: {penSpec.specialShot.name}</span>
+                {/* Passive Skill View */}
+                <div className="rounded-xl border border-emerald-400/25 bg-emerald-950/20 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                      <PenTool className="h-3.5 w-3.5 shrink-0" />
+                      <span>Passive: {penSpec.passive.name}</span>
                     </div>
-                    <span className="text-[10px] text-slate-400">
-                      {penSpec.specialShot.cooldownSeconds}s CD
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80">
+                      Always active
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-normal">
-                    {penSpec.specialShot.summary}
+                  <p className="text-[11px] font-medium text-emerald-100/90 leading-normal">
+                    {penSpec.passive.summary}
+                  </p>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    {penSpec.passive.detail}
                   </p>
                 </div>
               </div>

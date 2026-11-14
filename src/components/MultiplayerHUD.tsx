@@ -1,29 +1,20 @@
 import React, { useState } from 'react';
 import {
-  ChevronDown,
-  ChevronUp,
   Clock,
-  Eye,
-  EyeOff,
+  Crosshair,
   Hammer,
-  HelpCircle,
-  Home,
-  Radio,
+  LogOut,
+  Orbit,
   RotateCcw,
-  Settings as SettingsIcon,
+  Shield,
+  ShieldCheck,
   Skull,
-  Spline,
-  Tornado,
-  Volume2,
-  VolumeX,
   Wind,
-  Zap,
 } from 'lucide-react';
 import { GameSnapshot } from '../game/GameState';
 import { PerformanceMonitor } from '../game/PerformanceMonitor';
-import { SpecialShotIconKey } from '../utils/Constants';
+import { PenAbilityId } from '../utils/Constants';
 import { PerformanceOverlay } from './PerformanceOverlay';
-import { PowerMeter } from './PowerMeter';
 
 interface MultiplayerHUDProps {
   snapshot: GameSnapshot;
@@ -40,30 +31,20 @@ interface MultiplayerHUDProps {
   onExitToMenu: () => void;
 }
 
-const SHOT_ICONS: Record<SpecialShotIconKey, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
-  BURST: Zap,
-  STRIKE: Hammer,
-  DASH: Wind,
-  CURVE: Spline,
-  VORTEX: Tornado,
-  SHOCKWAVE: Radio,
+const PASSIVE_ICONS: Record<PenAbilityId, React.ComponentType<{ className?: string }>> = {
+  CAP_LOCK: ShieldCheck,
+  HEAVY_IMPACT: Hammer,
+  QUICK_RECOVERY: Wind,
+  PRECISION_PULL: Crosshair,
+  SPIN_CONTROL: Orbit,
+  IMPACT_GUARD: Shield,
 };
-
-const hexToRgb = (hex: number): string =>
-  `${(hex >> 16) & 0xff}, ${(hex >> 8) & 0xff}, ${hex & 0xff}`;
 
 export const MultiplayerHUD: React.FC<MultiplayerHUDProps> = ({
   snapshot,
-  sfxEnabled,
-  showTrajectory,
   monitor,
   showFps,
-  onToggleSfx,
-  onToggleTrajectory,
-  onActivateAbility,
   onRestart,
-  onOpenSettings,
-  onOpenHelp,
   onExitToMenu,
 }) => {
   const [rosterCollapsed, setRosterCollapsed] = useState(() =>
@@ -87,25 +68,17 @@ export const MultiplayerHUD: React.FC<MultiplayerHUDProps> = ({
   const isTimerDanger = timerSec <= 3 && snapshot.isTurnTimerRunning;
   const isTimerWarning = timerSec <= 5 && timerSec > 3 && snapshot.isTurnTimerRunning;
 
-  const ShotIcon = SHOT_ICONS[activeAbility.icon] ?? Zap;
-  const abilityArmed = activeAbility.armed;
-  const abilityCooling = !activeAbility.isActive && activeAbility.cooldownRemaining > 0;
-  const abilityEnabled =
-    activeAbility.canActivate &&
-    snapshot.matchState === 'PLAYER_TURN' &&
-    !mp.transitionPlayer &&
-    !snapshot.isTurnTimeoutNotice;
-
-  const rgb = hexToRgb(activeAbility.colorHex);
+  const PassiveIcon = PASSIVE_ICONS[activeAbility.abilityId] ?? ShieldCheck;
 
   return (
     <>
       {/* Top Main Multiplayer Header Bar — flex-wrap handles 320px portrait cleanly alongside desktop */}
       <header className="pointer-events-none safe-pad-top safe-pad-x fixed inset-x-0 top-0 z-20 w-full p-2 sm:p-3">
         <div className="flex w-full flex-wrap items-start justify-between gap-2 sm:flex-nowrap sm:gap-3">
-          {/* Team Blue Panel (Left) */}
+          {/* Team Blue Panel (Left) — tap header on mobile to expand/collapse roster */}
           <div
-            className={`pointer-events-auto order-1 flex flex-col rounded-xl border p-2 sm:p-2.5 transition-all shadow-md backdrop-blur-md max-w-[46%] sm:max-w-[15rem] ${
+            onClick={() => setRosterCollapsed((prev) => !prev)}
+            className={`pointer-events-auto order-1 flex cursor-pointer flex-col rounded-xl border p-2 sm:p-2.5 transition-all shadow-md backdrop-blur-md max-w-[46%] sm:max-w-[15rem] ${
               isBlueTeamActive && snapshot.matchState === 'PLAYER_TURN'
                 ? 'border-blue-400 bg-[#0e172a]/95 ring-1 ring-blue-400/50 shadow-blue-500/20'
                 : 'border-white/10 bg-[#0e172a]/85'
@@ -166,7 +139,8 @@ export const MultiplayerHUD: React.FC<MultiplayerHUDProps> = ({
           {/* Right Group: Team Red Panel + Non-overlapping PerformanceOverlay */}
           <div className="order-2 flex items-start gap-1.5 sm:order-3 sm:gap-2">
             <div
-              className={`pointer-events-auto flex flex-col rounded-xl border p-2 sm:p-2.5 transition-all shadow-md backdrop-blur-md max-w-[12rem] sm:max-w-[15rem] ${
+              onClick={() => setRosterCollapsed((prev) => !prev)}
+              className={`pointer-events-auto flex cursor-pointer flex-col rounded-xl border p-2 sm:p-2.5 transition-all shadow-md backdrop-blur-md max-w-[12rem] sm:max-w-[15rem] ${
                 !isBlueTeamActive && snapshot.matchState === 'PLAYER_TURN'
                   ? 'border-rose-400 bg-[#1e1017]/95 ring-1 ring-rose-400/50 shadow-rose-500/20'
                   : 'border-white/10 bg-[#1e1017]/85'
@@ -233,82 +207,8 @@ export const MultiplayerHUD: React.FC<MultiplayerHUDProps> = ({
             />
           </div>
 
-          {/* Center Stage: Quick Controls, Countdown Timer & Active Special Shot */}
+          {/* Center Stage: Countdown Timer, Status & Active Passive Skill */}
           <div className="pointer-events-auto order-3 flex w-full flex-col items-center gap-1.5 sm:order-2 sm:w-auto">
-            {/* Quick Actions */}
-            <div className="flex items-center gap-0.5 rounded-xl border border-white/12 bg-[#111827]/95 px-1 py-0.5 shadow-lg backdrop-blur-md sm:gap-1 sm:px-2 sm:py-1">
-              <button
-                type="button"
-                onClick={onRestart}
-                title="Restart Match"
-                aria-label="Restart Match"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onToggleSfx}
-                title={sfxEnabled ? 'Mute Sound' : 'Enable Sound'}
-                aria-label={sfxEnabled ? 'Mute Sound' : 'Enable Sound'}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                {sfxEnabled ? (
-                  <Volume2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                ) : (
-                  <VolumeX className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-rose-400" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={onToggleTrajectory}
-                title={showTrajectory ? 'Hide Trajectory Arc' : 'Show Trajectory Arc'}
-                aria-label={showTrajectory ? 'Hide Trajectory Arc' : 'Show Trajectory Arc'}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                {showTrajectory ? (
-                  <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-400" />
-                ) : (
-                  <EyeOff className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-500" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setRosterCollapsed((prev) => !prev)}
-                title={rosterCollapsed ? 'Show Team Rosters' : 'Hide Team Rosters'}
-                aria-label="Toggle Rosters"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                {rosterCollapsed ? <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <ChevronUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
-              </button>
-              <button
-                type="button"
-                onClick={onOpenHelp}
-                title="How to Play"
-                aria-label="How to Play"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                <HelpCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                title="Settings"
-                aria-label="Settings"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                <SettingsIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onExitToMenu}
-                title="Exit to Main Menu"
-                aria-label="Exit to Main Menu"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                <Home className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-            </div>
 
             {/* Turn Countdown Timer + Smooth Progress Bar */}
             {snapshot.turnTimeTotal > 0 && snapshot.matchState === 'PLAYER_TURN' && !snapshot.isTurnTimeoutNotice && (
@@ -360,33 +260,19 @@ export const MultiplayerHUD: React.FC<MultiplayerHUDProps> = ({
               </div>
             )}
 
-            {/* Active Player Special Shot Button */}
+            {/* Active Player Passive Skill Badge */}
             {activePlayer && snapshot.matchState === 'PLAYER_TURN' && !snapshot.isTurnTimeoutNotice && (
-              <button
-                type="button"
-                onClick={onActivateAbility}
-                disabled={!abilityEnabled}
-                title={`${activeAbility.name} · ${activeAbility.passiveName} (E key)`}
-                className={`relative flex min-h-[38px] items-center gap-2 rounded-lg border px-3 py-1 text-xs font-bold transition-all ${
-                  abilityArmed
-                    ? 'border-sky-300 bg-sky-950 text-sky-100 ring-2 ring-sky-400 shadow-md animate-pulse'
-                    : abilityEnabled
-                      ? 'border-emerald-400/80 bg-emerald-950/90 text-emerald-100 hover:bg-emerald-900 shadow-sm'
-                      : 'border-white/10 bg-slate-950/80 text-slate-500 cursor-not-allowed'
-                }`}
+              <div
+                title={`${activeAbility.passiveName}: ${activeAbility.passiveSummary}`}
+                className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-emerald-400/35 bg-[#111827]/90 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 shadow-sm"
               >
-                <ShotIcon className="h-3.5 w-3.5" style={{ color: `rgb(${rgb})` }} />
-                <span>{activeAbility.name}</span>
-                <span className="rounded bg-black/40 px-1.5 py-0.5 text-[9px] font-mono-num">
-                  {abilityArmed
-                    ? 'Aim & Release'
-                    : abilityCooling
-                      ? `${activeAbility.cooldownRemaining.toFixed(1)}s`
-                      : activeAbility.maxUsesPerMatch >= 0 && activeAbility.usesRemaining <= 0
-                        ? 'Spent'
-                        : 'Ready (E)'}
+                <PassiveIcon className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span className="whitespace-nowrap">{activeAbility.passiveName}</span>
+                <span className="hidden text-slate-500 sm:inline" aria-hidden="true">·</span>
+                <span className="hidden text-[10px] font-normal text-slate-300 sm:inline">
+                  {activeAbility.passiveSummary}
                 </span>
-              </button>
+              </div>
             )}
           </div>
         </div>
@@ -445,8 +331,30 @@ export const MultiplayerHUD: React.FC<MultiplayerHUDProps> = ({
         </div>
       )}
 
-      {/* Live Drag Power Meter */}
-      <PowerMeter telemetry={snapshot.dragTelemetry} />
+      {/* Side Corner Controls: Restart & Quit only */}
+      <div className="pointer-events-auto safe-pad-bottom fixed bottom-3 right-3 z-20 flex items-center gap-1 rounded-xl border border-white/12 bg-[#111827]/92 p-1 shadow-lg backdrop-blur-md sm:bottom-4 sm:right-4">
+        <button
+          type="button"
+          onClick={onRestart}
+          title="Restart Match"
+          aria-label="Restart Match"
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:px-3"
+        >
+          <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span>Restart</span>
+        </button>
+        <span className="h-4 w-px bg-white/10" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={onExitToMenu}
+          title="Quit to Main Menu"
+          aria-label="Quit to Main Menu"
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/15 hover:text-rose-200 focus-visible:outline-2 focus-visible:outline-rose-400 sm:h-9 sm:px-3"
+        >
+          <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span>Quit</span>
+        </button>
+      </div>
     </>
   );
 };

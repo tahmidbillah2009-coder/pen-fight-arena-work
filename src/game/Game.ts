@@ -165,9 +165,8 @@ export class PenFightGame {
             this.audio.playRelease(powerRatio);
             this.turnManager.notifyShotLaunched('bot', powerRatio);
           },
-          onSpecialShot: (dirX: number, dirZ: number) =>
-            this.abilitySystem.activate('bot', dirX, dirZ),
-          canUseSpecialShot: () => this.abilitySystem.canActivate('bot'),
+          onSpecialShot: () => false,
+          canUseSpecialShot: () => false,
         });
       },
       onPenFell: (penId: PlayerId) => {
@@ -405,50 +404,19 @@ export class PenFightGame {
     this.turnManager?.dismissTurnTransition();
   }
 
-  /**
-   * HUD button / keyboard entry point for the player's Special Shot.
-   *
-   * First press PRIMES the shot: the aim overlay switches to the shot's real predicted physics
-   * path (and the button shows its armed state). The shot then fires from a drag-and-release —
-   * aimed exactly like a normal shot — or from a second press, which fires along the pen's own
-   * heading. Returns true when a press actually did something (primed or fired).
-   */
+  /** Active Special Shots are disabled; only passive pen skills remain active. */
   public activatePlayerAbility(): boolean {
-    if (!this.initialized) return false;
-    if (!this.turnManager.canAcceptShot()) return false;
-    const activeId = this.turnManager?.getActivePlayerId() ?? 'player';
-    if (this.abilitySystem.isArmed(activeId)) {
-      return this.abilitySystem.activate(activeId);
-    }
-    const armed = this.abilitySystem.arm(activeId);
-    if (armed) {
-      this.applyAbilityPreview();
-    }
-    return armed;
+    return false;
   }
 
-  /** Cancels a primed Special Shot without firing it. */
+  /** Cancels any primed Special Shot without firing it. */
   public cancelPlayerAbility(): boolean {
-    if (!this.initialized) return false;
-    const activeId = this.turnManager?.getActivePlayerId() ?? 'player';
-    if (!this.abilitySystem.isArmed(activeId)) return false;
-    this.abilitySystem.disarm(activeId);
-    this.applyAbilityPreview();
-    return true;
+    return false;
   }
 
-  /** An ability may only be fired while it is actually that player's turn. */
-  private canActivateAbility(id: PlayerId): boolean {
-    const snap = this.state.getSnapshot();
-    if (this.turnManager?.getMultiplayerConfig()) {
-      return (
-        snap.matchState === 'PLAYER_TURN' &&
-        !snap.multiplayer?.transitionPlayer &&
-        !snap.isTurnTimeoutNotice &&
-        id === this.turnManager.getActivePlayerId()
-      );
-    }
-    return id === 'player' ? snap.matchState === 'PLAYER_TURN' : snap.matchState === 'BOT_TURN';
+  /** Active Special Shots are disabled; passives remain always on. */
+  private canActivateAbility(_id: PlayerId): boolean {
+    return false;
   }
 
   /** Raised the instant any pen's Special Shot actually starts — audio, particles, trail, camera. */

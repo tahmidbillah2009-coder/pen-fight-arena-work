@@ -3,29 +3,21 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Crosshair,
-  Hammer,
   Lock,
-  Orbit,
-  Shield,
-  ShieldCheck,
   Sparkles,
-  Wind,
   X,
-  Zap,
 } from 'lucide-react';
 import {
   derivePenStats,
   PEN_ORDER,
   PEN_SPECS,
   penComZ,
-  PenAbilityId,
   PenTypeId,
   penYawInertia,
   RARITY_COLORS,
 } from '../utils/Constants';
 import type { AchievementProgress } from '../game/Progression';
-import { AbilityIconComponent, SHOT_ICONS } from './GameHUD';
+import { PASSIVE_ICONS } from './GameHUD';
 import { PenPreviewViewer } from './PenPreviewViewer';
 
 interface PenSelectorProps {
@@ -53,15 +45,6 @@ const DETAIL_STATS: Array<{ key: keyof ReturnType<typeof derivePenStats>; label:
   { key: 'spin', label: 'Spin Potential' },
 ];
 
-/** One glyph per always-on passive so the passive card reads instantly. */
-const PASSIVE_ICONS: Record<PenAbilityId, AbilityIconComponent> = {
-  CAP_LOCK: ShieldCheck,
-  HEAVY_IMPACT: Hammer,
-  QUICK_RECOVERY: Wind,
-  PRECISION_PULL: Crosshair,
-  SPIN_CONTROL: Orbit,
-  IMPACT_GUARD: Shield,
-};
 
 export const PenSelector: React.FC<PenSelectorProps> = ({
   isOpen,
@@ -84,9 +67,7 @@ export const PenSelector: React.FC<PenSelectorProps> = ({
   const unlocked = unlockedPens.includes(penType);
   const equipped = equippedPen === penType;
   const rarity = RARITY_COLORS[spec.rarity];
-  const ShotIcon = SHOT_ICONS[spec.specialShot.icon] ?? Zap;
-  const PassiveIcon = PASSIVE_ICONS[spec.passive.id] ?? ShieldCheck;
-  const shot = spec.specialShot;
+  const PassiveIcon = PASSIVE_ICONS[spec.passive.id];
   const passive = spec.passive;
 
   const step = useCallback((delta: number) => {
@@ -299,31 +280,6 @@ export const PenSelector: React.FC<PenSelectorProps> = ({
               </div>
               <p className="mt-1.5 text-[11px] font-medium text-emerald-200/90">{passive.summary}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-300">{passive.detail}</p>
-            </div>
-
-            {/* ACTIVE SPECIAL SHOT */}
-            <div className="mt-3 rounded-xl border border-sky-400/25 bg-sky-950/20 p-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-sky-400/40 bg-sky-500/12">
-                  <ShotIcon className="h-4 w-4" style={{ color: `#${spec.specialShot.colorHex.toString(16).padStart(6, '0')}` }} />
-                </span>
-                <div className="min-w-0">
-                  <div className="text-[9px] font-bold uppercase tracking-wide text-sky-400/80">
-                    Special Shot · press to charge
-                  </div>
-                  <div className="truncate text-sm font-bold text-white">{shot.name}</div>
-                </div>
-                <span className="ml-auto shrink-0 font-mono-num text-[10px] text-slate-400">
-                  {shot.durationSeconds}s · CD {shot.cooldownSeconds}s
-                  {shot.maxUsesPerMatch >= 0 ? ` · ${shot.maxUsesPerMatch} uses` : ''}
-                </span>
-              </div>
-              <p className="mt-1.5 text-[11px] font-medium text-sky-200/90">{shot.summary}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-slate-300">{shot.description}</p>
-              <p className="mt-1.5 text-[10px] text-slate-500">
-                Tap the Special Shot button to prime it, then drag &amp; release to fire — the dashed
-                preview shows the shot&apos;s real predicted path while it is primed.
-              </p>
             </div>
 
             {/* Unlock state */}

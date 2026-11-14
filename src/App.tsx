@@ -359,19 +359,6 @@ export default function App() {
         return;
       }
 
-      if (e.key === 'e' || e.key === 'E') {
-        if (
-          snapshot.matchState === 'PLAYER_TURN' &&
-          !hasTransitionBanner &&
-          !snapshot.isTurnTimeoutNotice &&
-          !anyModalOpen
-        ) {
-          e.preventDefault();
-          gameRef.current?.activatePlayerAbility();
-        }
-        return;
-      }
-
       // Prevent browser spacebar scroll or accidental focused button activation during active matches.
       if (e.key === ' ' && snapshot.matchState !== 'MENU' && !anyModalOpen) {
         e.preventDefault();

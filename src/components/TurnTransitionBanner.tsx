@@ -1,7 +1,8 @@
 import React from 'react';
-import { PenTool, Zap } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { getPenSkinSpec, MultiplayerPlayerState } from '../game/MultiplayerTypes';
 import { PEN_SPECS, RARITY_COLORS } from '../utils/Constants';
+import { PASSIVE_ICONS } from './GameHUD';
 
 interface TurnTransitionBannerProps {
   player: MultiplayerPlayerState | null;
@@ -18,6 +19,7 @@ export const TurnTransitionBanner: React.FC<TurnTransitionBannerProps> = ({
   const spec = PEN_SPECS[player.penType];
   const rarity = RARITY_COLORS[spec.rarity];
   const skinSpec = getPenSkinSpec(player.skinId);
+  const PassiveIcon = PASSIVE_ICONS[spec.passive.id] ?? ShieldCheck;
 
   return (
     <div
@@ -68,14 +70,15 @@ export const TurnTransitionBanner: React.FC<TurnTransitionBannerProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300">
-            <div className="flex items-center gap-1.5 truncate">
-              <PenTool className="h-3 w-3 shrink-0 text-sky-400" />
-              <span className="truncate">{spec.passive.name}</span>
-            </div>
-            <div className="flex items-center gap-1.5 truncate">
-              <Zap className="h-3 w-3 shrink-0 text-amber-400" />
-              <span className="truncate">{spec.specialShot.name}</span>
+          <div className="flex items-start gap-2 text-[11px] text-slate-300">
+            <PassiveIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <div className="min-w-0">
+              <div className="font-semibold text-emerald-200">
+                Passive: {spec.passive.name}
+              </div>
+              <div className="text-[10px] text-slate-400 leading-snug">
+                {spec.passive.summary}
+              </div>
             </div>
           </div>
         </div>

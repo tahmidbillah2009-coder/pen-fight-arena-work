@@ -1,28 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
-  Eye,
-  EyeOff,
+  Crosshair,
   Hammer,
-  HelpCircle,
-  Home,
-  Radio,
+  LogOut,
+  Orbit,
   RotateCcw,
-  Settings as SettingsIcon,
+  Shield,
+  ShieldCheck,
   Smartphone,
-  Spline,
-  Tornado,
-  Volume2,
-  VolumeX,
   Wind,
   X,
-  Zap,
 } from 'lucide-react';
 import { AbilityHudState, DifficultyLevel, GameSnapshot } from '../game/GameState';
 import type { PerformanceMonitor } from '../game/PerformanceMonitor';
-import { SpecialShotIconKey } from '../utils/Constants';
+import { PenAbilityId } from '../utils/Constants';
 import { PerformanceOverlay } from './PerformanceOverlay';
-import { PowerMeter } from './PowerMeter';
 import { MultiplayerHUD } from './MultiplayerHUD';
 
 interface GameHUDProps {
@@ -42,120 +35,40 @@ interface GameHUDProps {
   onExitToMenu: () => void;
 }
 
-/** Every pen's Special Shot has its own icon so the button reads at a glance (shared with the selector). */
+/** Shared icon type for always-on passive badges (reused in PenSelector & MultiplayerHUD). */
 export type AbilityIconComponent = React.ComponentType<{
   className?: string;
   style?: React.CSSProperties;
 }>;
 
-export const SHOT_ICONS: Record<SpecialShotIconKey, AbilityIconComponent> = {
-  BURST: Zap,
-  STRIKE: Hammer,
-  DASH: Wind,
-  CURVE: Spline,
-  VORTEX: Tornado,
-  SHOCKWAVE: Radio,
+export const PASSIVE_ICONS: Record<PenAbilityId, AbilityIconComponent> = {
+  CAP_LOCK: ShieldCheck,
+  HEAVY_IMPACT: Hammer,
+  QUICK_RECOVERY: Wind,
+  PRECISION_PULL: Crosshair,
+  SPIN_CONTROL: Orbit,
+  IMPACT_GUARD: Shield,
 };
 
-const hexToRgb = (hex: number): string =>
-  `${(hex >> 16) & 0xff}, ${(hex >> 8) & 0xff}, ${hex & 0xff}`;
-
 /**
- * Dedicated Special Shot button: shows the equipped shot's name, icon and live cooldown progress,
- * dims while unavailable, and switches to an armed "aim & release" state once primed from the HUD.
+ * Passive Skill badge displayed in the HUD: shows the equipped pen's always-on passive skill
+ * (e.g. Cap Lock · Better grip) with zero active activation required.
  */
-const AbilityChip: React.FC<{ ability: AbilityHudState; onActivate: () => void }> = ({
-  ability,
-  onActivate,
-}) => {
-  const ShotIcon = SHOT_ICONS[ability.icon] ?? Zap;
-  const limited = ability.maxUsesPerMatch >= 0;
-  const spent = limited && ability.usesRemaining <= 0;
-  const armed = ability.armed;
-  const cooling = !ability.isActive && ability.cooldownRemaining > 0;
-  const enabled = ability.canActivate;
-
-  // Progress toward the next state: shot completion while firing, cooldown fill while waiting.
-  const progress = ability.isActive
-    ? ability.activeTotal > 0
-      ? 1 - ability.activeRemaining / ability.activeTotal
-      : 1
-    : cooling
-      ? ability.cooldownTotal > 0
-        ? 1 - ability.cooldownRemaining / ability.cooldownTotal
-        : 1
-      : 1;
-
-  const stateLabel = ability.isActive
-    ? `${ability.activeRemaining.toFixed(1)}s`
-    : armed
-      ? 'Aim'
-      : cooling
-        ? `${ability.cooldownRemaining.toFixed(1)}s`
-        : spent
-          ? 'Spent'
-          : 'Ready';
-
-  const tone = ability.isActive
-    ? 'border-amber-400/80 bg-amber-950/92 text-amber-100 animate-pulse'
-    : armed
-      ? 'border-sky-300/90 bg-sky-950/92 text-sky-100 shadow-[0_0_0_2px_rgba(56,189,248,0.35)]'
-      : enabled
-        ? 'border-emerald-400/65 bg-emerald-950/88 text-emerald-100 hover:bg-emerald-900/80'
-        : 'border-white/10 bg-[#111827]/85 text-slate-400';
-
-  const rgb = hexToRgb(ability.colorHex);
+const PassiveBadge: React.FC<{ ability: AbilityHudState }> = ({ ability }) => {
+  const PassiveIcon = PASSIVE_ICONS[ability.abilityId] ?? ShieldCheck;
 
   return (
-    <button
-      type="button"
-      onClick={onActivate}
-      disabled={!enabled}
-      aria-label={
-        armed ? `Release ${ability.name}` : ability.name
-      }
-      aria-pressed={armed}
-      title={`${ability.name} · ${ability.passiveName} — press or tap, then drag to aim & release (E)`}
-      className={`pointer-events-auto relative flex min-h-[42px] flex-col overflow-hidden rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${tone}`}
+    <div
+      title={`${ability.passiveName}: ${ability.passiveSummary}`}
+      className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-emerald-400/35 bg-[#111827]/90 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 shadow-sm"
     >
-      <span className="flex items-center gap-1.5">
-        <ShotIcon
-          className={`h-3.5 w-3.5 shrink-0 ${armed ? 'animate-pulse' : ''}`}
-          style={{ color: `rgb(${rgb})` }}
-        />
-        <span className="whitespace-nowrap">{ability.name}</span>
-        <span className="font-mono-num rounded bg-black/30 px-1.5 py-0.5 text-[10px]">
-          {stateLabel}
-        </span>
-        {limited && (
-          <span className="flex items-center gap-0.5" aria-hidden="true">
-            {Array.from({ length: ability.maxUsesPerMatch }).map((_, i) => (
-              <span
-                key={i}
-                className={`h-1.5 w-1.5 rounded-full ${
-                  i < ability.usesRemaining ? 'bg-current' : 'bg-white/15'
-                }`}
-              />
-            ))}
-          </span>
-        )}
+      <PassiveIcon className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+      <span className="whitespace-nowrap">{ability.passiveName}</span>
+      <span className="hidden text-slate-500 sm:inline" aria-hidden="true">·</span>
+      <span className="hidden text-[10px] font-normal text-slate-300 sm:inline">
+        {ability.passiveSummary}
       </span>
-      {armed && (
-        <span className="mt-0.5 whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-sky-300">
-          Drag &amp; release to fire
-        </span>
-      )}
-      {/* Cooldown / shot-progress bar */}
-      <span
-        className="absolute inset-x-0 bottom-0 h-[3px] bg-black/40"
-        aria-hidden="true"
-      >
-        <span
-          className="block h-full transition-[width] duration-150 ease-linear"
-          style={{ width: `${Math.round(progress * 100)}%`, backgroundColor: `rgb(${rgb})` }}
-        />
-      </span>
-    </button>
+    </div>
   );
 };
 
@@ -282,79 +195,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             />
           </div>
 
-          {/* Center Controls & Status (wraps cleanly to centered 2nd row on <640px phones, centered 1st row on >=640px) */}
+          {/* Center Status & Passive Skill */}
           <div className="pointer-events-auto order-3 flex w-full flex-col items-center gap-1 sm:order-2 sm:w-auto sm:gap-1.5">
-            <div className="flex items-center gap-0.5 rounded-xl border border-white/12 bg-[#111827]/92 px-1 py-0.5 shadow-lg sm:gap-1 sm:px-2 sm:py-1">
-              <button
-                type="button"
-                onClick={onRestart}
-                title="Restart Match"
-                aria-label="Restart Match"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:w-9"
-              >
-                <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onToggleSfx}
-                title={sfxEnabled ? 'Mute Sound' : 'Enable Sound'}
-                aria-label={sfxEnabled ? 'Mute Sound' : 'Enable Sound'}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:w-9"
-              >
-                {sfxEnabled ? <Volume2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <VolumeX className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-rose-400" />}
-              </button>
-              <button
-                type="button"
-                onClick={onToggleTrajectory}
-                title={showTrajectory ? 'Hide Trajectory Arc' : 'Show Trajectory Arc'}
-                aria-label={showTrajectory ? 'Hide Trajectory Arc' : 'Show Trajectory Arc'}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:w-9"
-              >
-                {showTrajectory ? <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-400" /> : <EyeOff className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-500" />}
-              </button>
-              <button
-                type="button"
-                onClick={onOpenHelp}
-                title="How to Play"
-                aria-label="How to Play"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:w-9"
-              >
-                <HelpCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                title="Settings"
-                aria-label="Settings"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:w-9"
-              >
-                <SettingsIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onExitToMenu}
-                title="Exit to Main Menu"
-                aria-label="Exit to Main Menu"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:w-9"
-              >
-                <Home className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </button>
-            </div>
-
             <div className="max-w-[min(94vw,34rem)] truncate rounded-lg border border-white/10 bg-[#111827]/90 px-2.5 py-0.5 text-center text-[10px] font-medium text-slate-200 sm:px-3 sm:py-1 sm:text-xs">
               {snapshot.shotStatusText}
             </div>
 
-            {/* Equipped pen ability + live opponent ability activation */}
+            {/* Equipped pen always-on passive skill */}
             {snapshot.matchState !== 'MENU' && snapshot.matchState !== 'MATCH_OVER' && (
               <div className="flex flex-wrap items-center justify-center gap-1.5">
-                <AbilityChip ability={snapshot.playerAbility} onActivate={onActivateAbility} />
-                {snapshot.botAbility.isActive && (
-                  <div className="pointer-events-none flex items-center gap-1 rounded-lg border border-rose-400/50 bg-rose-950/85 px-2 py-1 text-[10px] font-semibold text-rose-200">
-                    <Zap className="h-3 w-3" />
-                    <span className="whitespace-nowrap">Bot: {snapshot.botAbility.name}</span>
-                  </div>
-                )}
+                <PassiveBadge ability={snapshot.playerAbility} />
               </div>
             )}
 
@@ -398,9 +248,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       </header>
 
+      {/* Side Corner Controls: Restart & Quit only */}
+      <div className="pointer-events-auto safe-pad-bottom fixed bottom-3 right-3 z-20 flex items-center gap-1 rounded-xl border border-white/12 bg-[#111827]/92 p-1 shadow-lg backdrop-blur-md sm:bottom-4 sm:right-4">
+        <button
+          type="button"
+          onClick={onRestart}
+          title="Restart Match"
+          aria-label="Restart Match"
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-blue-400 sm:h-9 sm:px-3"
+        >
+          <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span>Restart</span>
+        </button>
+        <span className="h-4 w-px bg-white/10" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={onExitToMenu}
+          title="Quit to Main Menu"
+          aria-label="Quit to Main Menu"
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/15 hover:text-rose-200 focus-visible:outline-2 focus-visible:outline-rose-400 sm:h-9 sm:px-3"
+        >
+          <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span>Quit</span>
+        </button>
+      </div>
+
       {/* Non-blocking Dismissible Landscape Tip on narrow portrait phones */}
       {isNarrowPortrait && !tipDismissed && !snapshot.dragTelemetry.isDragging && (
-        <div className="pointer-events-none safe-pad-bottom safe-pad-x fixed inset-x-0 bottom-0 z-10 flex justify-center">
+        <div className="pointer-events-none safe-pad-bottom safe-pad-x fixed inset-x-0 bottom-14 z-10 flex justify-center">
           <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-white/12 bg-[#111827]/90 px-3 py-1.5 text-[11px] text-slate-300 shadow-lg">
             <Smartphone className="h-3.5 w-3.5 shrink-0 rotate-90 text-sky-400" />
             <span>Rotate to landscape for a larger desk view</span>
@@ -428,15 +303,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </div>
             <div className="mt-1 text-xs font-medium text-slate-300">
               {isPractice
-                ? 'Practice Freeplay — Test angles, spins & Special Shots'
+                ? 'Practice Freeplay — Test angles, spin & passive control'
                 : 'Knock the crimson pen off the desk'}
             </div>
           </div>
         </div>
       )}
 
-      {/* Live Drag Power Meter */}
-      <PowerMeter telemetry={snapshot.dragTelemetry} />
     </>
   );
 };
