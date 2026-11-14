@@ -1,0 +1,8 @@
+{
+  "name": "PEN FIGHT ARENA",
+  "description": "3D physics-based tabletop pen fighting game with real-time point-based grab-and-pull mechanics, isometric classroom arena, and adaptive AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
