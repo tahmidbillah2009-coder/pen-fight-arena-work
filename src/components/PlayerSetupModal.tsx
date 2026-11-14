@@ -21,12 +21,9 @@ import {
   TeamId,
   TurnTimerOption,
 } from '../game/MultiplayerTypes';
-import {
-  PEN_SPECS,
-  PenTypeId,
-  RARITY_COLORS,
-} from '../utils/Constants';
+import { PEN_SPECS, PenTypeId } from '../utils/Constants';
 import { MultiplayerStorage } from '../utils/MultiplayerStorage';
+import { getPaperRarityTheme, PaperDivider, PaperSectionLabel } from './PaperUI';
 import { PenPreviewViewer } from './PenPreviewViewer';
 
 interface PlayerSetupModalProps {
@@ -74,7 +71,6 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
   const [startingPlayerId, setStartingPlayerId] = useState<string>('');
   const [validationError, setValidationError] = useState('');
 
-  // Re-initialize roster whenever the modal opens or mode changes
   useEffect(() => {
     if (!isOpen) return;
     const saved = MultiplayerStorage.load();
@@ -103,7 +99,7 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
   if (!activePlayer) return null;
 
   const penSpec = PEN_SPECS[activePlayer.penType];
-  const rarity = RARITY_COLORS[penSpec.rarity];
+  const rarity = getPaperRarityTheme(penSpec.rarity);
   const activeSkinId: PenSkinId = activePlayer.skinId ?? 'team_default';
 
   const handleUpdateName = (index: number, newName: string) => {
@@ -181,40 +177,44 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
   };
 
   return (
-    <div className="safe-pad-x safe-pad-top safe-pad-bottom fixed inset-0 z-30 flex items-center justify-center bg-black/80 p-3 sm:p-5 backdrop-blur-md">
-      <div className="animate-modal-in modal-scroll-area flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col rounded-2xl border border-white/15 bg-[#10141e] shadow-2xl overflow-hidden">
+    <div
+      className="safe-pad-x safe-pad-top safe-pad-bottom fixed inset-0 z-30 flex items-center justify-center bg-[#292725]/45 p-3 sm:p-5"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="animate-modal-in paper-shadow-lg flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-xl border-[1.5px] border-[#45413C] bg-[#FFFDF8] text-[#292725]">
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3.5 sm:px-5 bg-slate-900/90">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#D9C5A8] bg-[#F7F3EA] px-4 py-3.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={onBack}
               aria-label="Back to Modes"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition-colors hover:bg-white/10"
+              className="paper-btn flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-[1.5px] border-[#45413C] bg-[#FFFDF8] text-[#292725] hover:bg-[#EFEAE0]"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="min-w-0">
-              <h2 className="font-display text-base sm:text-lg font-bold tracking-tight text-white truncate">
-                ROSTER &amp; PEN SETUP
+              <h2 className="font-display truncate text-base font-extrabold uppercase tracking-[0.04em] text-[#292725] sm:text-lg">
+                Local Multiplayer Lobby
               </h2>
-              <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+              <p className="truncate text-[11px] font-medium text-[#6E6A64] sm:text-xs">
                 {mode} · {players.length} Players · Pass &amp; Play on this device
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="rounded-lg bg-blue-500/20 px-2.5 py-1 text-[11px] font-semibold text-blue-300 border border-blue-500/30">
-              {turnTimer === 0 ? 'Unlimited Timer' : `${turnTimer}s Turn`}
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="rounded-lg border border-[#365B82]/50 bg-[#E8EFF6] px-2.5 py-1 font-mono-num text-[11px] font-bold text-[#365B82]">
+              {turnTimer === 0 ? 'Unlimited' : `${turnTimer}s Turn`}
             </span>
             {onOpenSettings && (
               <button
                 type="button"
                 onClick={onOpenSettings}
                 aria-label="Audio & Graphics Settings"
-                title="Audio & Graphics Settings"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
+                title="Settings"
+                className="paper-btn flex h-9 w-9 items-center justify-center rounded-lg border-[1.5px] border-[#45413C] bg-[#FFFDF8] text-[#292725] hover:bg-[#EFEAE0]"
               >
                 <SettingsIcon className="h-4 w-4" />
               </button>
@@ -222,15 +222,14 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
           </div>
         </div>
 
-        {/* Setup Content Grid */}
-        <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row">
-          {/* Left Column: Player Roster List + Turn Order */}
-          <div className="w-full border-b border-white/10 p-4 lg:w-72 lg:border-r lg:border-b-0 space-y-4 bg-slate-950/40 shrink-0">
+        {/* Body */}
+        <div className="modal-scroll-area flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row">
+          {/* Left Column: Roster & Turn Order */}
+          <div className="w-full shrink-0 space-y-4 border-b border-[#D9C5A8] bg-[#F7F3EA] p-4 lg:w-72 lg:border-b-0 lg:border-r">
             <div>
-              <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
-                <span>Players ({players.length})</span>
-                <span className="text-[10px] font-normal text-slate-500">Tap to edit</span>
-              </div>
+              <PaperSectionLabel className="mb-2" right="Tap to edit">
+                Players ({players.length})
+              </PaperSectionLabel>
 
               <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
                 {players.map((p, idx) => {
@@ -243,40 +242,40 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
                       key={p.id}
                       type="button"
                       onClick={() => setSelectedPlayerIdx(idx)}
-                      className={`flex w-full items-center justify-between rounded-xl border p-2.5 text-left transition-all ${
+                      className={`paper-btn flex w-full items-center justify-between rounded-lg border-[1.5px] p-2.5 text-left transition-colors ${
                         isSelected
                           ? isBlue
-                            ? 'border-blue-400 bg-blue-950/50 shadow-md ring-1 ring-blue-400'
-                            : 'border-rose-400 bg-rose-950/50 shadow-md ring-1 ring-rose-400'
-                          : 'border-white/10 bg-slate-900/50 hover:bg-slate-900 hover:border-white/20'
+                            ? 'border-[#365B82] bg-[#E8EFF6]'
+                            : 'border-[#9E3B36] bg-[#F9EAE9]'
+                          : 'border-[#45413C]/65 bg-[#FFFDF8] hover:bg-[#EFEAE0]'
                       }`}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`h-7 w-2 rounded-sm shrink-0 ${
-                            isBlue ? 'bg-blue-500' : 'bg-rose-500'
+                          className={`h-7 w-2 shrink-0 rounded-sm ${
+                            isBlue ? 'bg-[#4F6D8A]' : 'bg-[#B55450]'
                           }`}
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-1">
-                            <span className="truncate text-xs font-bold text-white">
+                            <span className="truncate text-xs font-bold text-[#292725]">
                               {p.name || 'Unnamed'}
                             </span>
                             {isStarter && (
-                              <span className="rounded bg-amber-500/25 px-1 py-0.2 text-[8px] font-bold text-amber-300 border border-amber-400/30 shrink-0">
+                              <span className="shrink-0 rounded border border-[#9C6C2B]/60 bg-[#FBF3E2] px-1 py-0.2 text-[8px] font-bold text-[#85581A]">
                                 1ST
                               </span>
                             )}
                           </div>
-                          <div className="truncate text-[10px] text-slate-400">
+                          <div className="truncate text-[10px] font-medium text-[#6E6A64]">
                             {spec.label} · {isBlue ? 'Blue' : 'Red'}
                           </div>
                         </div>
                       </div>
 
                       <ChevronRight
-                        className={`h-4 w-4 shrink-0 transition-transform ${
-                          isSelected ? 'translate-x-0.5 text-white' : 'text-slate-600'
+                        className={`h-4 w-4 shrink-0 ${
+                          isSelected ? 'text-[#292725]' : 'text-[#8D8579]'
                         }`}
                       />
                     </button>
@@ -285,14 +284,16 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
               </div>
             </div>
 
-            {/* Configurable Starting Player / Turn Queue Preview */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-300">
-                <ListOrdered className="h-3.5 w-3.5 text-amber-400" />
+            <PaperDivider />
+
+            {/* Turn Order Selector */}
+            <div className="space-y-2 rounded-lg border border-[#45413C]/70 bg-[#FFFDF8] p-3">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#292725]">
+                <ListOrdered className="h-3.5 w-3.5 text-[#85581A]" />
                 <span>Turn Order &amp; Starter</span>
               </div>
-              <p className="text-[10px] text-slate-400">
-                Tap a player below to choose who goes first:
+              <p className="text-[10px] text-[#6E6A64]">
+                Tap any player to make them shoot first:
               </p>
               <div className="flex flex-wrap gap-1">
                 {turnOrderPreview.map((pid, orderIdx) => {
@@ -306,16 +307,16 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
                       type="button"
                       onClick={() => setStartingPlayerId(pid)}
                       title={`Set ${pl.name} as starting player`}
-                      className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold transition-all ${
+                      className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-bold transition-colors ${
                         isFirst
-                          ? 'border-amber-400 bg-amber-950/60 text-amber-200 ring-1 ring-amber-400/50'
+                          ? 'border-[#9C6C2B] bg-[#FBF3E2] text-[#85581A]'
                           : isBlue
-                            ? 'border-blue-500/30 bg-blue-950/40 text-blue-300 hover:border-blue-400'
-                            : 'border-rose-500/30 bg-rose-950/40 text-rose-300 hover:border-rose-400'
+                            ? 'border-[#365B82]/40 bg-[#E8EFF6] text-[#365B82] hover:border-[#365B82]'
+                            : 'border-[#9E3B36]/40 bg-[#F9EAE9] text-[#9E3B36] hover:border-[#9E3B36]'
                       }`}
                     >
                       <span className="font-mono-num text-[9px] opacity-75">{orderIdx + 1}.</span>
-                      <span className="truncate max-w-[76px]">{pl.name || pid}</span>
+                      <span className="max-w-[76px] truncate">{pl.name || pid}</span>
                     </button>
                   );
                 })}
@@ -323,22 +324,22 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
             </div>
 
             {validationError && (
-              <div className="rounded-lg bg-rose-950/60 border border-rose-500/40 p-2.5 text-xs text-rose-300">
+              <div className="rounded-lg border border-[#9E3B36] bg-[#F9EAE9] p-2.5 text-xs font-semibold text-[#9E3B36]">
                 {validationError}
               </div>
             )}
           </div>
 
-          {/* Right Column: Selected Player Customization & 3D Viewer */}
-          <div className="flex-1 p-4 sm:p-6 space-y-5 overflow-y-auto">
-            {/* Player Info Row (Name + Team Toggle) */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-900/70 p-4">
+          {/* Right Column: Selected Player Editor */}
+          <div className="modal-scroll-area flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+            {/* Name + Team Assignment */}
+            <div className="flex flex-col justify-between gap-3 rounded-xl border-[1.5px] border-[#45413C] bg-[#F7F3EA] p-4 sm:flex-row sm:items-center">
               <div className="flex-1">
                 <label
                   htmlFor="player-name-input"
-                  className="block text-[11px] font-semibold text-slate-400 mb-1"
+                  className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-[#6E6A64]"
                 >
-                  PLAYER DISPLAY NAME
+                  Player Display Name
                 </label>
                 <input
                   id="player-name-input"
@@ -347,26 +348,26 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
                   value={activePlayer.name}
                   onChange={(e) => handleUpdateName(selectedPlayerIdx, e.target.value)}
                   placeholder="Enter player name"
-                  className="w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm font-semibold text-white placeholder-slate-500 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full rounded-lg border-[1.5px] border-[#45413C] bg-[#FFFDF8] px-3 py-2 text-sm font-bold text-[#292725] placeholder-[#8D8579] focus:border-[#4F6D8A] focus:outline-none"
                 />
               </div>
 
               <div>
-                <div className="text-[11px] font-semibold text-slate-400 mb-1">
-                  TEAM ASSIGNMENT
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#6E6A64]">
+                  Team Assignment
                 </div>
                 <button
                   type="button"
                   onClick={() => handleToggleTeam(selectedPlayerIdx)}
-                  className={`flex min-h-[38px] items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-bold transition-all ${
+                  className={`paper-btn flex min-h-[38px] items-center gap-2 rounded-lg border-[1.5px] px-3.5 py-2 text-xs font-bold ${
                     activePlayer.team === 'blue'
-                      ? 'border-blue-400 bg-blue-900/50 text-blue-200'
-                      : 'border-rose-400 bg-rose-900/50 text-rose-200'
+                      ? 'border-[#365B82] bg-[#E8EFF6] text-[#365B82]'
+                      : 'border-[#9E3B36] bg-[#F9EAE9] text-[#9E3B36]'
                   }`}
                 >
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${
-                      activePlayer.team === 'blue' ? 'bg-blue-400' : 'bg-rose-400'
+                      activePlayer.team === 'blue' ? 'bg-[#4F6D8A]' : 'bg-[#B55450]'
                     }`}
                   />
                   <span>
@@ -376,61 +377,56 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
               </div>
             </div>
 
-            {/* 3D Pen Preview & Pen Details */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-              {/* 3D Interactive Pen Preview */}
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900/90 to-slate-950 p-3 relative h-56 sm:h-64">
-                <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 z-10 flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-                  <span>3D Pen Preview</span>
+            {/* 3D Preview + Pen Info */}
+            <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-2">
+              <div className="paper-dots-inset relative flex h-56 flex-col items-center justify-center rounded-xl border-[1.5px] border-[#45413C] p-3 sm:h-64">
+                <span className="absolute left-3 top-3 z-10 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#6E6A64]">
+                  <Sparkles className="h-3.5 w-3.5 text-[#85581A]" />
+                  <span>3D Preview</span>
                 </span>
-                <span className="absolute top-3 right-3 text-[10px] text-slate-500 z-10">
+                <span className="absolute right-3 top-3 z-10 text-[10px] font-medium text-[#6E6A64]">
                   Drag to rotate
                 </span>
 
-                <div className="w-full h-full">
+                <div className="h-full w-full">
                   <PenPreviewViewer
                     penType={activePlayer.penType}
                     team={activePlayer.team}
                     skinId={activeSkinId}
-                    className="w-full h-full"
+                    className="h-full w-full"
                   />
                 </div>
               </div>
 
-              {/* Equipped Pen Details & Abilities */}
               <div className="space-y-2.5">
-                <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3.5 space-y-1.5">
+                <div className="space-y-1.5 rounded-xl border-[1.5px] border-[#45413C] bg-[#FFFDF8] p-3.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-base font-extrabold text-white">
+                    <span className="font-display text-base font-extrabold text-[#292725]">
                       {penSpec.label}
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${rarity.bg} ${rarity.text}`}
+                      className={`rounded border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${rarity.badgeBg} ${rarity.badgeText} ${rarity.badgeBorder}`}
                     >
                       {penSpec.rarity}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    {penSpec.tagline}
-                  </p>
+                  <p className="text-xs leading-relaxed text-[#57534E]">{penSpec.tagline}</p>
                 </div>
 
-                {/* Passive Skill View */}
-                <div className="rounded-xl border border-emerald-400/25 bg-emerald-950/20 p-3 space-y-1.5">
+                <div className="space-y-1.5 rounded-xl border-[1.5px] border-[#2E664B] bg-[#E6F2EC]/75 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#2E664B]">
                       <PenTool className="h-3.5 w-3.5 shrink-0" />
                       <span>Passive: {penSpec.passive.name}</span>
                     </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80">
-                      Always active
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#2E664B]">
+                      Always On
                     </span>
                   </div>
-                  <p className="text-[11px] font-medium text-emerald-100/90 leading-normal">
+                  <p className="text-[11px] font-semibold leading-normal text-[#292725]">
                     {penSpec.passive.summary}
                   </p>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                  <p className="text-[11px] leading-relaxed text-[#57534E]">
                     {penSpec.passive.detail}
                   </p>
                 </div>
@@ -439,35 +435,35 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
 
             {/* Pen Skin Finish Picker */}
             <div>
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-                <Palette className="h-3.5 w-3.5 text-sky-400" />
+              <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#6E6A64]">
+                <Palette className="h-3.5 w-3.5 text-[#4F6D8A]" />
                 <span>Pen Skin Finish</span>
               </div>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                 {PEN_SKINS.map((skin) => {
                   const selected = activeSkinId === skin.id;
                   const swatchColor =
                     skin.id === 'team_default'
                       ? activePlayer.team === 'blue'
-                        ? '#2563eb'
-                        : '#e11d48'
+                        ? '#365B82'
+                        : '#B55450'
                       : skin.swatchHex;
                   return (
                     <button
                       key={skin.id}
                       type="button"
                       onClick={() => handleUpdateSkin(selectedPlayerIdx, skin.id)}
-                      className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-all ${
+                      className={`paper-btn flex items-center gap-2 rounded-lg border-[1.5px] px-2.5 py-2 text-left ${
                         selected
-                          ? 'border-sky-400 bg-sky-950/50 ring-1 ring-sky-400'
-                          : 'border-white/10 bg-slate-900/60 hover:border-white/25'
+                          ? 'border-[#365B82] bg-[#E8EFF6]'
+                          : 'border-[#45413C]/65 bg-[#FFFDF8] hover:bg-[#EFEAE0]'
                       }`}
                     >
                       <span
-                        className="h-3.5 w-3.5 rounded-full shrink-0 border border-white/25"
+                        className="h-3.5 w-3.5 shrink-0 rounded-full border border-[#45413C]"
                         style={{ backgroundColor: swatchColor }}
                       />
-                      <span className="truncate text-[10px] font-semibold text-slate-200">
+                      <span className="truncate text-[10px] font-bold text-[#292725]">
                         {skin.label}
                       </span>
                     </button>
@@ -476,38 +472,34 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
               </div>
             </div>
 
-            {/* Equip Pen Catalog Selector */}
+            {/* Choose Pen Model */}
             <div>
-              <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+              <PaperSectionLabel className="mb-2">
                 Choose Pen Model ({ALL_PENS.length} Available)
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              </PaperSectionLabel>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {ALL_PENS.map((penKey) => {
                   const isEquipped = activePlayer.penType === penKey;
                   const spec = PEN_SPECS[penKey];
-                  const pRarity = RARITY_COLORS[spec.rarity];
+                  const pRarity = getPaperRarityTheme(spec.rarity);
                   return (
                     <button
                       key={penKey}
                       type="button"
                       onClick={() => handleUpdatePen(selectedPlayerIdx, penKey)}
-                      className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
+                      className={`paper-btn flex flex-col items-start rounded-lg border-[1.5px] p-2.5 text-left ${
                         isEquipped
-                          ? 'border-sky-400 bg-sky-950/40 ring-1 ring-sky-400 shadow-md'
-                          : 'border-white/10 bg-slate-900/50 hover:border-white/20 hover:bg-slate-900'
+                          ? 'border-[#365B82] bg-[#E8EFF6]'
+                          : 'border-[#45413C]/65 bg-[#FFFDF8] hover:bg-[#EFEAE0]'
                       }`}
                     >
-                      <div className="flex w-full items-center justify-between">
-                        <span className="text-xs font-bold text-white truncate">
+                      <div className="flex w-full items-center justify-between gap-1">
+                        <span className="truncate text-xs font-bold text-[#292725]">
                           {spec.label}
                         </span>
-                        {isEquipped && (
-                          <Check className="h-3.5 w-3.5 text-sky-400 shrink-0" />
-                        )}
+                        {isEquipped && <Check className="h-3.5 w-3.5 shrink-0 text-[#365B82]" />}
                       </div>
-                      <span
-                        className={`mt-1 text-[9px] font-bold uppercase tracking-wider ${pRarity.text}`}
-                      >
+                      <span className={`mt-1 text-[9px] font-bold uppercase tracking-wider ${pRarity.badgeText}`}>
                         {spec.rarity}
                       </span>
                     </button>
@@ -518,12 +510,12 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
           </div>
         </div>
 
-        {/* Modal Footer */}
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-white/10 bg-slate-900/90 px-4 py-3.5 sm:px-5">
+        {/* Footer */}
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-[#D9C5A8] bg-[#F7F3EA] px-4 py-3.5 sm:px-5">
           <button
             type="button"
             onClick={onBack}
-            className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-700"
+            className="paper-btn min-h-[42px] rounded-lg border-[1.5px] border-[#45413C] bg-[#FFFDF8] px-4 text-xs font-bold text-[#292725] hover:bg-[#EFEAE0]"
           >
             Back to Modes
           </button>
@@ -531,7 +523,7 @@ export const PlayerSetupModal: React.FC<PlayerSetupModalProps> = ({
           <button
             type="button"
             onClick={handleStartGame}
-            className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-colors hover:bg-blue-500"
+            className="paper-btn flex min-h-[42px] items-center gap-2 rounded-lg border-[1.5px] border-[#45413C] bg-[#4F6D8A] px-6 text-xs font-bold uppercase tracking-[0.06em] text-[#FFFDF8] hover:bg-[#435E79]"
           >
             <Play className="h-4 w-4 fill-current" />
             <span>Start Match ({mode})</span>

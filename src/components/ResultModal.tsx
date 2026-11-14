@@ -1,8 +1,9 @@
 import React from 'react';
 import { Home, RotateCcw, Sparkles, Trophy } from 'lucide-react';
-import { PEN_SPECS, RARITY_COLORS } from '../utils/Constants';
 import { GameSnapshot } from '../game/GameState';
 import type { ProgressionEvent } from '../game/Progression';
+import { PEN_SPECS } from '../utils/Constants';
+import { getPaperRarityTheme } from './PaperUI';
 
 interface ResultModalProps {
   snapshot: GameSnapshot;
@@ -25,26 +26,32 @@ export const ResultModal: React.FC<ResultModalProps> = ({
   const hasRewards = unlockedPens.length > 0 || completedAchievements.length > 0;
 
   return (
-    <div className="safe-pad-x safe-pad-top safe-pad-bottom fixed inset-0 z-30 flex items-center justify-center bg-black/55">
-      <div className="animate-modal-in modal-scroll-area max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-white/15 bg-[#12161f] p-5 text-center shadow-2xl sm:p-7">
-        {/* Custom SVG Victory / Defeat Emblem */}
+    <div
+      className="safe-pad-x safe-pad-top safe-pad-bottom fixed inset-0 z-30 flex items-center justify-center bg-[#292725]/45 p-3 sm:p-5"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="animate-modal-in modal-scroll-area paper-shadow-lg max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl border-[1.5px] border-[#45413C] bg-[#FFFDF8] p-5 text-center text-[#292725] sm:p-7">
+        {/* Editorial Ink Stamp Emblem */}
         <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center sm:mb-4 sm:h-16 sm:w-16">
           {isVictory ? (
             <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden="true">
-              <circle cx="32" cy="32" r="30" fill="#1e3a8a" stroke="#60a5fa" strokeWidth="2.5" />
+              <circle cx="32" cy="32" r="29" fill="#E8EFF6" stroke="#45413C" strokeWidth="2.5" />
               <path
                 d="M21 20h22v10c0 7.5-4.8 13-11 14.5C25.8 43 21 37.5 21 30V20z"
-                fill="#fbbf24"
+                fill="#D9C5A8"
+                stroke="#45413C"
+                strokeWidth="2"
               />
-              <rect x="28" y="44" width="8" height="6" fill="#d97706" />
-              <rect x="23" y="50" width="18" height="4" rx="2" fill="#f59e0b" />
+              <rect x="28" y="44" width="8" height="6" fill="#4F6D8A" stroke="#45413C" strokeWidth="1.5" />
+              <rect x="23" y="50" width="18" height="4" rx="1.5" fill="#45413C" />
             </svg>
           ) : (
             <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden="true">
-              <circle cx="32" cy="32" r="30" fill="#4c0519" stroke="#fb7185" strokeWidth="2.5" />
+              <circle cx="32" cy="32" r="29" fill="#F9EAE9" stroke="#45413C" strokeWidth="2.5" />
               <path
                 d="M23 23l18 18M41 23L23 41"
-                stroke="#fda4af"
+                stroke="#9E3B36"
                 strokeWidth="4.5"
                 strokeLinecap="round"
               />
@@ -52,51 +59,56 @@ export const ResultModal: React.FC<ResultModalProps> = ({
           )}
         </div>
 
+        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6E6A64]">
+          Match Report
+        </div>
         <h2
-          className={`font-display text-2xl font-extrabold tracking-tight sm:text-3xl ${
-            isVictory ? 'text-amber-400' : 'text-rose-400'
+          className={`font-display mt-0.5 text-2xl font-extrabold uppercase tracking-[0.04em] sm:text-3xl ${
+            isVictory ? 'text-[#365B82]' : 'text-[#9E3B36]'
           }`}
         >
-          {isVictory ? 'VICTORY!' : 'DEFEAT'}
+          {isVictory ? 'Victory' : 'Defeat'}
         </h2>
-        <p className="mt-1.5 text-xs text-slate-300 sm:text-sm">{snapshot.loserReason}</p>
+        <p className="mt-1.5 text-xs text-[#57534E] sm:text-sm">{snapshot.loserReason}</p>
 
         {/* Match Stats */}
-        <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-slate-900/90 p-2.5 sm:mt-5 sm:p-3">
+        <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl border-[1.5px] border-[#45413C] bg-[#F7F3EA] p-3 sm:mt-5">
           <div>
-            <div className="text-[11px] text-slate-400">Turns</div>
-            <div className="font-mono-num text-sm font-bold text-white sm:text-base">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#6E6A64]">Turns</div>
+            <div className="font-mono-num mt-0.5 text-sm font-bold text-[#292725] sm:text-base">
               {snapshot.stats.turnsPlayed}
             </div>
           </div>
-          <div>
-            <div className="text-[11px] text-slate-400">Max Power</div>
-            <div className="font-mono-num text-sm font-bold text-white sm:text-base">
+          <div className="border-x border-[#D9C5A8]">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#6E6A64]">
+              Max Power
+            </div>
+            <div className="font-mono-num mt-0.5 text-sm font-bold text-[#292725] sm:text-base">
               {snapshot.stats.maxPowerPercent}%
             </div>
           </div>
           <div>
-            <div className="text-[11px] text-slate-400">Hits</div>
-            <div className="font-mono-num text-sm font-bold text-white sm:text-base">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#6E6A64]">Hits</div>
+            <div className="font-mono-num mt-0.5 text-sm font-bold text-[#292725] sm:text-base">
               {snapshot.stats.collisions}
             </div>
           </div>
         </div>
 
-        {/* Achievement & pen-unlock rewards from this match */}
+        {/* Achievement & Pen Unlock Slips */}
         {hasRewards && (
           <div className="mt-3 space-y-2 text-left sm:mt-4">
             {completedAchievements.length > 0 && (
-              <div className="rounded-xl border border-amber-400/35 bg-amber-950/25 p-2.5 sm:p-3">
-                <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-amber-200">
+              <div className="rounded-xl border-[1.5px] border-[#9C6C2B] bg-[#FBF3E2] p-3">
+                <div className="mb-1.5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#85581A]">
                   <Trophy className="h-3.5 w-3.5" />
-                  <span>Achievement Unlocked</span>
+                  <span>Milestone Reached</span>
                 </div>
                 <ul className="space-y-1">
                   {completedAchievements.map((a) => (
-                    <li key={a.id} className="text-[11px] text-amber-100/90">
-                      <span className="font-semibold text-amber-100">{a.label}</span>
-                      <span className="text-amber-100/70"> — {a.description}</span>
+                    <li key={a.id} className="text-xs text-[#292725]">
+                      <span className="font-bold">{a.label}</span>
+                      <span className="text-[#6E6A64]"> — {a.description}</span>
                     </li>
                   ))}
                 </ul>
@@ -105,19 +117,19 @@ export const ResultModal: React.FC<ResultModalProps> = ({
 
             {unlockedPens.map((pen) => {
               const spec = PEN_SPECS[pen];
-              const rarity = RARITY_COLORS[spec.rarity];
+              const rarity = getPaperRarityTheme(spec.rarity);
               return (
                 <div
                   key={pen}
-                  className={`flex items-center gap-2.5 rounded-xl border p-2.5 sm:p-3 ${rarity.ring} ${rarity.bg}`}
+                  className={`flex items-center gap-2.5 rounded-xl border-[1.5px] p-3 ${rarity.badgeBorder} ${rarity.badgeBg}`}
                 >
-                  <Sparkles className={`h-4 w-4 shrink-0 ${rarity.text}`} />
+                  <Sparkles className={`h-4 w-4 shrink-0 ${rarity.badgeText}`} />
                   <div className="min-w-0">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-300">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6E6A64]">
                       New Pen Unlocked
                     </div>
-                    <div className="truncate text-sm font-bold text-white">{spec.label}</div>
-                    <div className="truncate text-[11px] text-slate-400">{spec.tagline}</div>
+                    <div className="truncate text-sm font-bold text-[#292725]">{spec.label}</div>
+                    <div className="truncate text-[11px] text-[#57534E]">{spec.tagline}</div>
                   </div>
                 </div>
               );
@@ -129,10 +141,10 @@ export const ResultModal: React.FC<ResultModalProps> = ({
           <button
             type="button"
             onClick={onPlayAgain}
-            className={`flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold text-white transition-colors focus-visible:outline-2 focus-visible:outline-white ${
+            className={`paper-btn flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg border-[1.5px] border-[#45413C] px-5 text-xs font-bold uppercase tracking-[0.06em] text-[#FFFDF8] ${
               isVictory
-                ? 'bg-blue-600 hover:bg-blue-500'
-                : 'bg-rose-600 hover:bg-rose-500'
+                ? 'bg-[#4F6D8A] hover:bg-[#435E79]'
+                : 'bg-[#9E3B36] hover:bg-[#86312D]'
             }`}
           >
             <RotateCcw className="h-4 w-4" />
@@ -142,7 +154,7 @@ export const ResultModal: React.FC<ResultModalProps> = ({
           <button
             type="button"
             onClick={onExitToMenu}
-            className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-800 px-5 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-blue-400"
+            className="paper-btn flex min-h-[44px] items-center justify-center gap-2 rounded-lg border-[1.5px] border-[#45413C] bg-[#EFEAE0] px-5 text-xs font-bold uppercase tracking-[0.06em] text-[#292725] hover:bg-[#E4DCCB]"
           >
             <Home className="h-4 w-4" />
             <span>Menu</span>

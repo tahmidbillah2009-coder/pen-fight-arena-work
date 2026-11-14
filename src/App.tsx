@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import { ArenaModal } from './components/ArenaModal';
 import { BenchmarkModal } from './components/BenchmarkModal';
 import { GameHUD } from './components/GameHUD';
 import { HowToPlayModal } from './components/HowToPlayModal';
 import { MainMenu } from './components/MainMenu';
 import { MultiplayerModeModal } from './components/MultiplayerModeModal';
 import { MultiplayerResultModal } from './components/MultiplayerResultModal';
+import { PauseModal } from './components/PauseModal';
 import { PenSelector } from './components/PenSelector';
 import { PlayerSetupModal } from './components/PlayerSetupModal';
 import { ResultModal } from './components/ResultModal';
 import { SettingsModal } from './components/Settings';
+import { StatsModal } from './components/StatsModal';
 import { PenFightGame } from './game/Game';
 import { abilityHudDefaults, DifficultyLevel, GameSettings, GameSnapshot } from './game/GameState';
 import {
@@ -131,6 +134,9 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [penSelectorOpen, setPenSelectorOpen] = useState(false);
   const [benchmarkOpen, setBenchmarkOpen] = useState(false);
+  const [arenasOpen, setArenasOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [pauseOpen, setPauseOpen] = useState(false);
   const [unlockedPens, setUnlockedPens] = useState<PenTypeId[]>(
     () => progression.getProfile().unlockedPens
   );
@@ -302,6 +308,9 @@ export default function App() {
         helpOpen ||
         penSelectorOpen ||
         benchmarkOpen ||
+        arenasOpen ||
+        statsOpen ||
+        pauseOpen ||
         multiplayerModeOpen ||
         playerSetupOpen
     );
@@ -310,18 +319,24 @@ export default function App() {
     helpOpen,
     penSelectorOpen,
     benchmarkOpen,
+    arenasOpen,
+    statsOpen,
+    pauseOpen,
     multiplayerModeOpen,
     playerSetupOpen,
     isReady,
   ]);
 
-  // Keyboard shortcuts (Enter/Space to start or dismiss banner, E to arm/fire ability, Escape for modals)
+  // Keyboard shortcuts (Enter/Space to start, Escape for modals & pause)
   useEffect(() => {
     const anyModalOpen =
       settingsOpen ||
       helpOpen ||
       penSelectorOpen ||
       benchmarkOpen ||
+      arenasOpen ||
+      statsOpen ||
+      pauseOpen ||
       multiplayerModeOpen ||
       playerSetupOpen;
 
@@ -340,12 +355,18 @@ export default function App() {
           setPenSelectorOpen(false);
         } else if (benchmarkOpen) {
           setBenchmarkOpen(false);
+        } else if (arenasOpen) {
+          setArenasOpen(false);
+        } else if (statsOpen) {
+          setStatsOpen(false);
         } else if (playerSetupOpen) {
           setPlayerSetupOpen(false);
         } else if (multiplayerModeOpen) {
           setMultiplayerModeOpen(false);
-        } else if (snapshot.matchState !== 'MENU') {
-          setSettingsOpen(true);
+        } else if (pauseOpen) {
+          setPauseOpen(false);
+        } else if (snapshot.matchState !== 'MENU' && snapshot.matchState !== 'MATCH_OVER') {
+          setPauseOpen(true);
         }
         return;
       }
@@ -378,6 +399,9 @@ export default function App() {
     helpOpen,
     penSelectorOpen,
     benchmarkOpen,
+    arenasOpen,
+    statsOpen,
+    pauseOpen,
     multiplayerModeOpen,
     playerSetupOpen,
     isReady,
@@ -406,7 +430,7 @@ export default function App() {
 
   return (
     <main
-      className="relative w-full h-[100dvh] min-w-0 min-h-0 overflow-hidden bg-[#e6dccb]"
+      className="relative w-full h-[100dvh] min-w-0 min-h-0 overflow-hidden bg-[#F4F0E8]"
       style={{ width: '100%', height: '100dvh', minWidth: 0, minHeight: 0 }}
     >
       {/* Isolated WebGL Canvas Mount */}
@@ -417,12 +441,12 @@ export default function App() {
 
       {/* WebGL Context Lost Fallback */}
       {contextLost && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 p-6 text-center">
-          <div className="max-w-sm rounded-2xl border border-white/15 bg-slate-900 p-6">
-            <h2 className="font-display text-xl font-bold text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#292725]/60 p-6 text-center">
+          <div className="paper-shadow-lg max-w-sm rounded-xl border-[1.5px] border-[#45413C] bg-[#FFFDF8] p-6 text-[#292725]">
+            <h2 className="font-display text-xl font-extrabold uppercase tracking-[0.04em] text-[#292725]">
               Graphics Context Paused
             </h2>
-            <p className="mt-2 text-sm text-slate-300">
+            <p className="mt-2 text-xs leading-relaxed text-[#57534E]">
               Your browser temporarily suspended WebGL rendering. Reload the page to restore the 3D arena.
             </p>
           </div>
@@ -443,6 +467,8 @@ export default function App() {
           onOpenPenSelector={() => setPenSelectorOpen(true)}
           onPlay={() => gameRef.current?.startMatch()}
           onOpenMultiplayer={() => setMultiplayerModeOpen(true)}
+          onOpenArenas={() => setArenasOpen(true)}
+          onOpenStats={() => setStatsOpen(true)}
           onOpenHowToPlay={() => setHelpOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenBenchmark={() => setBenchmarkOpen(true)}
@@ -462,12 +488,35 @@ export default function App() {
           onToggleSfx={handleToggleSfx}
           onToggleTrajectory={handleToggleTrajectory}
           onActivateAbility={() => gameRef.current?.activatePlayerAbility()}
-          onRestart={() => gameRef.current?.restartMatch()}
+          onPause={() => setPauseOpen(true)}
+          onRestart={() => {
+            setPauseOpen(false);
+            gameRef.current?.restartMatch();
+          }}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenHelp={() => setHelpOpen(true)}
-          onExitToMenu={() => gameRef.current?.returnToMenu()}
+          onExitToMenu={() => {
+            setPauseOpen(false);
+            gameRef.current?.returnToMenu();
+          }}
         />
       )}
+
+      {/* Pause Menu Modal */}
+      <PauseModal
+        isOpen={pauseOpen && isInMatch && snapshot.matchState !== 'MATCH_OVER'}
+        onResume={() => setPauseOpen(false)}
+        onRestart={() => {
+          setPauseOpen(false);
+          gameRef.current?.restartMatch();
+        }}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenHowToPlay={() => setHelpOpen(true)}
+        onExitToMenu={() => {
+          setPauseOpen(false);
+          gameRef.current?.returnToMenu();
+        }}
+      />
 
       {/* Match Result Modal (Solo vs AI only) */}
       {!snapshot.multiplayer && snapshot.gameMode === 'VS_AI' && (
@@ -584,6 +633,17 @@ export default function App() {
 
       {/* How to Play Modal */}
       <HowToPlayModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      {/* Arena Selection Modal */}
+      <ArenaModal isOpen={arenasOpen} onClose={() => setArenasOpen(false)} />
+
+      {/* Player Statistics Modal */}
+      <StatsModal
+        isOpen={statsOpen}
+        profile={progression.getProfile()}
+        achievements={achievements}
+        onClose={() => setStatsOpen(false)}
+      />
     </main>
   );
 }

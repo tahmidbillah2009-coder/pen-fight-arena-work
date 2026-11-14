@@ -10,7 +10,11 @@ import {
   TABLE_THICKNESS,
   TABLE_WIDTH,
 } from '../utils/Constants';
+import { createClassroomFloorTexture, createDeskSurfaceMaps } from './DeskTextures';
 import { EdgeDangerLevel } from './GameState';
+
+const SHADOW_PLANE_W = TABLE_WIDTH + 4.5;
+const SHADOW_PLANE_D = TABLE_DEPTH + 4.0;
 
 export class TableEnvironment {
   public readonly group = new THREE.Group();
@@ -43,89 +47,6 @@ export class TableEnvironment {
     this.deskGroup.rotation.y = orientation === 'vertical' ? Math.PI * 0.5 : 0;
     // Slide back wall back by 3.8u when vertical so the chalkboard clears the -9.75 table edge.
     this.wallGroup.position.z = orientation === 'vertical' ? -3.8 : 0;
-  }
-
-  private createWoodTexture(maxAnisotropy: number): THREE.CanvasTexture {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 1024;
-    const ctx = canvas.getContext('2d')!;
-
-    // Warm honey-oak school desk base
-    const grad = ctx.createLinearGradient(0, 0, 1024, 1024);
-    grad.addColorStop(0, '#c9935b');
-    grad.addColorStop(0.5, '#bf874e');
-    grad.addColorStop(1, '#b67d46');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 1024);
-
-    // Subtle plank joints & natural wood grain streaks
-    for (let i = 0; i < 420; i++) {
-      const y = (i / 420) * 1024 + (Math.random() - 0.5) * 3;
-      const alpha = 0.03 + Math.random() * 0.07;
-      ctx.strokeStyle = i % 2 === 0 ? `rgba(92, 52, 22, ${alpha})` : `rgba(235, 198, 148, ${alpha * 0.8})`;
-      ctx.lineWidth = 1 + Math.random() * 2.8;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      const wave = (Math.random() - 0.5) * 14;
-      ctx.bezierCurveTo(340, y + wave, 680, y - wave, 1024, y + (Math.random() - 0.5) * 6);
-      ctx.stroke();
-    }
-
-    // Subtle school desk carved border line & center arena line for visual depth
-    ctx.strokeStyle = 'rgba(72, 39, 16, 0.24)';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(24, 24, 976, 976);
-
-    ctx.strokeStyle = 'rgba(255, 245, 228, 0.16)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([12, 12]);
-    ctx.beginPath();
-    ctx.moveTo(512, 36);
-    ctx.lineTo(512, 988);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Small ruler ticks along front edge
-    ctx.fillStyle = 'rgba(65, 34, 14, 0.35)';
-    for (let x = 64; x <= 960; x += 28) {
-      const tall = (x - 64) % 140 === 0 ? 18 : 10;
-      ctx.fillRect(x, 986 - tall, 2, tall);
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = maxAnisotropy;
-    this.disposables.push(texture);
-    return texture;
-  }
-
-  private createFloorTexture(maxAnisotropy: number): THREE.CanvasTexture {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d')!;
-
-    ctx.fillStyle = '#d7cab7';
-    ctx.fillRect(0, 0, 512, 512);
-
-    const tileSize = 128;
-    for (let gx = 0; gx < 4; gx++) {
-      for (let gy = 0; gy < 4; gy++) {
-        const shade = (gx + gy) % 2 === 0 ? '#d9ccb9' : '#cfc1ad';
-        ctx.fillStyle = shade;
-        ctx.fillRect(gx * tileSize + 2, gy * tileSize + 2, tileSize - 4, tileSize - 4);
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(9, 9);
-    texture.anisotropy = maxAnisotropy;
-    this.disposables.push(texture);
-    return texture;
   }
 
   private createChalkboardTexture(maxAnisotropy: number): THREE.CanvasTexture {
@@ -170,103 +91,321 @@ export class TableEnvironment {
     return texture;
   }
 
-  private createContactShadowTexture(): THREE.CanvasTexture {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d')!;
+  /**
+   * Builds a beveled, rounded-corner wooden tabletop split into:
+   * - `topDeckGeo`: flat playing surface strictly at Y = 0 plus the upper beveled lip (tangent-mapped for normalMap)
+   * - `edgeUndersideGeo`: vertical laminated edge banding, lower bevel & unfinished underside board
+   */
+  private createBeveledTabletopGeometries(): {
+    topDeckGeo: THREE.BufferGeometry;
+    edgeUndersideGeo: THREE.BufferGeometry;
+  } {
+    const bevel = 0.04;
+    const cornerR = 0.14;
+    const innerHalfW = TABLE_HALF_W - bevel;
+    const innerHalfD = TABLE_HALF_D - bevel;
+    const r = Math.max(0.02, cornerR - bevel);
 
-    const grad = ctx.createRadialGradient(128, 128, 16, 128, 128, 124);
-    grad.addColorStop(0, 'rgba(25, 16, 10, 0.55)');
-    grad.addColorStop(0.65, 'rgba(25, 16, 10, 0.2)');
-    grad.addColorStop(1, 'rgba(25, 16, 10, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 256, 256);
+    const shape = new THREE.Shape();
+    shape.moveTo(-innerHalfW + r, -innerHalfD);
+    shape.lineTo(innerHalfW - r, -innerHalfD);
+    shape.quadraticCurveTo(innerHalfW, -innerHalfD, innerHalfW, -innerHalfD + r);
+    shape.lineTo(innerHalfW, innerHalfD - r);
+    shape.quadraticCurveTo(innerHalfW, innerHalfD, innerHalfW - r, innerHalfD);
+    shape.lineTo(-innerHalfW + r, innerHalfD);
+    shape.quadraticCurveTo(-innerHalfW, innerHalfD, -innerHalfW, innerHalfD - r);
+    shape.lineTo(-innerHalfW, -innerHalfD + r);
+    shape.quadraticCurveTo(-innerHalfW, -innerHalfD, -innerHalfW + r, -innerHalfD);
 
-    const tex = new THREE.CanvasTexture(canvas);
-    this.disposables.push(tex);
-    return tex;
+    const raw = new THREE.ExtrudeGeometry(shape, {
+      depth: TABLE_THICKNESS - bevel * 2,
+      bevelEnabled: true,
+      bevelThickness: bevel,
+      bevelSize: bevel,
+      bevelSegments: 2,
+      curveSegments: 4,
+    });
+    raw.rotateX(-Math.PI * 0.5);
+    raw.computeBoundingBox();
+    const box = raw.boundingBox!;
+    const cx = (box.min.x + box.max.x) * 0.5;
+    const cz = (box.min.z + box.max.z) * 0.5;
+    // Align top playing face strictly to Y = 0
+    raw.translate(-cx, -box.max.y, -cz);
+    raw.computeVertexNormals();
+
+    const posAttr = raw.getAttribute('position') as THREE.BufferAttribute;
+    const normAttr = raw.getAttribute('normal') as THREE.BufferAttribute;
+
+    const topPos: number[] = [];
+    const topNorm: number[] = [];
+    const topUv: number[] = [];
+
+    const edgePos: number[] = [];
+    const edgeNorm: number[] = [];
+    const edgeUv: number[] = [];
+
+    const ax = new THREE.Vector3();
+    const bx = new THREE.Vector3();
+    const cxv = new THREE.Vector3();
+    const ab = new THREE.Vector3();
+    const ac = new THREE.Vector3();
+    const faceN = new THREE.Vector3();
+
+    for (let i = 0; i < posAttr.count; i += 3) {
+      ax.fromBufferAttribute(posAttr, i);
+      bx.fromBufferAttribute(posAttr, i + 1);
+      cxv.fromBufferAttribute(posAttr, i + 2);
+      ab.subVectors(bx, ax);
+      ac.subVectors(cxv, ax);
+      faceN.crossVectors(ab, ac).normalize();
+
+      if (faceN.y > 0.35) {
+        for (let k = 0; k < 3; k++) {
+          const idx = i + k;
+          const vx = posAttr.getX(idx);
+          const vy = posAttr.getY(idx);
+          const vz = posAttr.getZ(idx);
+          topPos.push(vx, vy, vz);
+          topNorm.push(normAttr.getX(idx), normAttr.getY(idx), normAttr.getZ(idx));
+          topUv.push((vx + TABLE_HALF_W) / TABLE_WIDTH, 1 - (vz + TABLE_HALF_D) / TABLE_DEPTH);
+        }
+      } else {
+        const isBottom = faceN.y <= -0.7;
+        for (let k = 0; k < 3; k++) {
+          const idx = i + k;
+          const vx = posAttr.getX(idx);
+          const vy = posAttr.getY(idx);
+          const vz = posAttr.getZ(idx);
+          edgePos.push(vx, vy, vz);
+          edgeNorm.push(normAttr.getX(idx), normAttr.getY(idx), normAttr.getZ(idx));
+          if (isBottom) {
+            edgeUv.push(
+              (vx + TABLE_HALF_W) / TABLE_WIDTH,
+              0.02 + 0.45 * ((vz + TABLE_HALF_D) / TABLE_DEPTH)
+            );
+          } else {
+            const along =
+              Math.abs(faceN.z) >= Math.abs(faceN.x)
+                ? (vx + TABLE_HALF_W) / 4.2
+                : (vz + TABLE_HALF_D) / 4.2;
+            const heightFrac = Math.max(0, Math.min(1, (vy + TABLE_THICKNESS) / TABLE_THICKNESS));
+            edgeUv.push(along, 0.53 + 0.45 * heightFrac);
+          }
+        }
+      }
+    }
+
+    raw.dispose();
+
+    const topRaw = new THREE.BufferGeometry();
+    topRaw.setAttribute('position', new THREE.Float32BufferAttribute(topPos, 3));
+    topRaw.setAttribute('normal', new THREE.Float32BufferAttribute(topNorm, 3));
+    topRaw.setAttribute('uv', new THREE.Float32BufferAttribute(topUv, 2));
+    const topDeckGeo = BufferGeometryUtils.mergeVertices(topRaw, 1e-4);
+    topRaw.dispose();
+    topDeckGeo.computeTangents();
+
+    const edgeRaw = new THREE.BufferGeometry();
+    edgeRaw.setAttribute('position', new THREE.Float32BufferAttribute(edgePos, 3));
+    edgeRaw.setAttribute('normal', new THREE.Float32BufferAttribute(edgeNorm, 3));
+    edgeRaw.setAttribute('uv', new THREE.Float32BufferAttribute(edgeUv, 2));
+    const edgeUndersideGeo = BufferGeometryUtils.mergeVertices(edgeRaw, 1e-4);
+    edgeRaw.dispose();
+
+    return { topDeckGeo, edgeUndersideGeo };
   }
 
   private buildDesk(maxAnisotropy: number): void {
-    const woodTex = this.createWoodTexture(maxAnisotropy);
+    // Leg anchor coordinates (slight outward classroom stance from mounting corners down to rubber feet)
+    const legTopOffsetX = TABLE_HALF_W - 0.95;
+    const legTopOffsetZ = TABLE_HALF_D - 0.85;
+    const legFootOffsetX = legTopOffsetX + 0.22;
+    const legFootOffsetZ = legTopOffsetZ + 0.16;
 
-    // 1. Primary wooden tabletop (top face sits strictly at Y = 0)
-    const topGeo = new THREE.BoxGeometry(TABLE_WIDTH, TABLE_THICKNESS, TABLE_DEPTH);
+    const legSpecs: Array<{ tx: number; tz: number; fx: number; fz: number }> = [
+      { tx: -legTopOffsetX, tz: -legTopOffsetZ, fx: -legFootOffsetX, fz: -legFootOffsetZ },
+      { tx: legTopOffsetX, tz: -legTopOffsetZ, fx: legFootOffsetX, fz: -legFootOffsetZ },
+      { tx: -legTopOffsetX, tz: legTopOffsetZ, fx: -legFootOffsetX, fz: legFootOffsetZ },
+      { tx: legTopOffsetX, tz: legTopOffsetZ, fx: legFootOffsetX, fz: legFootOffsetZ },
+    ];
+
+    const legFootNormalizedPositions = legSpecs.map(({ fx, fz }) => ({
+      nx: (fx + SHADOW_PLANE_W * 0.5) / SHADOW_PLANE_W,
+      nz: (fz + SHADOW_PLANE_D * 0.5) / SHADOW_PLANE_D,
+    }));
+
+    const maps = createDeskSurfaceMaps(maxAnisotropy, legFootNormalizedPositions);
+    this.disposables.push(
+      maps.albedo,
+      maps.roughness,
+      maps.normal,
+      maps.edgeUnderside,
+      maps.contactShadow
+    );
+
+    // 1. Beveled wooden tabletop slab (playing surface sits strictly at Y = 0)
+    const { topDeckGeo, edgeUndersideGeo } = this.createBeveledTabletopGeometries();
+
     const topMat = new THREE.MeshStandardMaterial({
-      map: woodTex,
-      roughness: 0.62,
-      metalness: 0.04,
+      map: maps.albedo,
+      roughnessMap: maps.roughness,
+      roughness: 1.0,
+      normalMap: maps.normal,
+      normalScale: new THREE.Vector2(0.28, 0.28),
+      metalness: 0.02,
+      envMapIntensity: 0.48,
     });
-    const tabletop = new THREE.Mesh(topGeo, topMat);
-    tabletop.position.set(0, -TABLE_THICKNESS * 0.5, 0);
+    const tabletop = new THREE.Mesh(topDeckGeo, topMat);
     tabletop.receiveShadow = true;
     tabletop.castShadow = true;
     this.deskGroup.add(tabletop);
-    this.disposables.push(topGeo, topMat);
+    this.disposables.push(topDeckGeo, topMat);
 
-    // 2. Dark walnut edge trim molding slightly inset below the top surface
-    const trimGeo = new THREE.BoxGeometry(TABLE_WIDTH + 0.12, 0.14, TABLE_DEPTH + 0.12);
-    const trimMat = new THREE.MeshStandardMaterial({
-      color: 0x5d3a21,
-      roughness: 0.5,
-      metalness: 0.08,
+    // 2. Worn laminated hardwood edge banding & raw underside wood board
+    const edgeMat = new THREE.MeshStandardMaterial({
+      map: maps.edgeUnderside,
+      roughness: 0.66,
+      metalness: 0.03,
+      envMapIntensity: 0.35,
     });
-    const trim = new THREE.Mesh(trimGeo, trimMat);
-    trim.position.set(0, -TABLE_THICKNESS + 0.09, 0);
-    trim.receiveShadow = true;
-    trim.castShadow = true;
-    this.deskGroup.add(trim);
-    this.disposables.push(trimGeo, trimMat);
+    const edgeMesh = new THREE.Mesh(edgeUndersideGeo, edgeMat);
+    edgeMesh.receiveShadow = true;
+    edgeMesh.castShadow = true;
+    this.deskGroup.add(edgeMesh);
+    this.disposables.push(edgeUndersideGeo, edgeMat);
 
-    // 3. Merged steel apron & 4 tubular legs (1 single draw call instead of 5)
+    // 3. Structural steel underframe: recessed apron rails, cross-ribs, gusset plates, splayed legs & stretchers
     const steelMat = new THREE.MeshStandardMaterial({
-      color: 0x334155,
-      roughness: 0.36,
-      metalness: 0.72,
+      color: 0x2f3a47,
+      roughness: 0.42,
+      metalness: 0.66,
+      envMapIntensity: 0.72,
     });
     const steelGeometries: THREE.BufferGeometry[] = [];
-    const apronGeo = new THREE.BoxGeometry(TABLE_WIDTH - 1.2, 0.52, TABLE_DEPTH - 1.1);
-    apronGeo.translate(0, -TABLE_THICKNESS - 0.25, 0);
-    steelGeometries.push(apronGeo);
-
-    // 4. Four tubular steel desk legs & glides
-    const legHeight = Math.abs(FLOOR_Y) - TABLE_THICKNESS;
-    const glideMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.88,
-      metalness: 0.05,
-    });
+    const hardwareGeometries: THREE.BufferGeometry[] = [];
     const glideGeometries: THREE.BufferGeometry[] = [];
 
-    const legOffsetX = TABLE_HALF_W - 0.95;
-    const legOffsetZ = TABLE_HALF_D - 0.85;
-    const legCoords: Array<[number, number]> = [
-      [-legOffsetX, -legOffsetZ],
-      [legOffsetX, -legOffsetZ],
-      [-legOffsetX, legOffsetZ],
-      [legOffsetX, legOffsetZ],
-    ];
+    const railY = -TABLE_THICKNESS - 0.15;
+    const railSpanX = legTopOffsetX * 2 + 0.18;
+    const railSpanZ = legTopOffsetZ * 2 + 0.18;
 
-    for (const [lx, lz] of legCoords) {
-      const legGeo = new THREE.CylinderGeometry(0.24, 0.18, legHeight, 14);
-      legGeo.translate(lx, -TABLE_THICKNESS - legHeight * 0.5, lz);
-      steelGeometries.push(legGeo);
-
-      const glideGeo = new THREE.CylinderGeometry(0.22, 0.24, 0.16, 14);
-      glideGeo.translate(lx, FLOOR_Y + 0.08, lz);
-      glideGeometries.push(glideGeo);
+    // Front & back recessed apron rails
+    for (const sz of [-legTopOffsetZ, legTopOffsetZ]) {
+      const fbRail = new THREE.BoxGeometry(railSpanX, 0.3, 0.15);
+      fbRail.translate(0, railY, sz);
+      steelGeometries.push(fbRail);
+    }
+    // Left & right recessed apron rails
+    for (const sx of [-legTopOffsetX, legTopOffsetX]) {
+      const lrRail = new THREE.BoxGeometry(0.15, 0.3, railSpanZ);
+      lrRail.translate(sx, railY, 0);
+      steelGeometries.push(lrRail);
+    }
+    // Two internal steel under-table stiffening ribs
+    for (const rx of [-3.4, 3.4]) {
+      const rib = new THREE.BoxGeometry(0.1, 0.2, railSpanZ - 0.2);
+      rib.translate(rx, railY + 0.04, 0);
+      steelGeometries.push(rib);
     }
 
-    const mergedSteelGeo = BufferGeometryUtils.mergeGeometries(steelGeometries, false) ?? apronGeo;
+    // Splayed tubular steel legs, mounting gusset plates, weld collars, side stretchers, fasteners & rubber glides
+    const upVec = new THREE.Vector3(0, 1, 0);
+    const legTopY = -TABLE_THICKNESS - 0.04;
+    const legBottomY = FLOOR_Y + 0.12;
+    const topVec = new THREE.Vector3();
+    const botVec = new THREE.Vector3();
+    const dirVec = new THREE.Vector3();
+    const midVec = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+
+    for (const { tx, tz, fx, fz } of legSpecs) {
+      // Corner gusset mounting plate flush under the desk
+      const gusset = new THREE.BoxGeometry(0.62, 0.05, 0.62);
+      gusset.translate(tx, -TABLE_THICKNESS - 0.025, tz);
+      steelGeometries.push(gusset);
+
+      // Weld collar right below corner plate
+      const collar = new THREE.CylinderGeometry(0.245, 0.225, 0.16, 14);
+      collar.translate(tx, -TABLE_THICKNESS - 0.1, tz);
+      steelGeometries.push(collar);
+
+      // Angled tubular steel leg
+      topVec.set(tx, legTopY, tz);
+      botVec.set(fx, legBottomY, fz);
+      dirVec.subVectors(botVec, topVec);
+      const legLen = dirVec.length();
+      dirVec.normalize();
+      quat.setFromUnitVectors(upVec, dirVec);
+      midVec.addVectors(topVec, botVec).multiplyScalar(0.5);
+
+      const legGeo = new THREE.CylinderGeometry(0.21, 0.16, legLen, 14);
+      legGeo.applyQuaternion(quat);
+      legGeo.translate(midVec.x, midVec.y, midVec.z);
+      steelGeometries.push(legGeo);
+
+      // Non-slip rubber floor glide resting cleanly at FLOOR_Y
+      const glideGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.14, 14);
+      glideGeo.translate(fx, FLOOR_Y + 0.07, fz);
+      glideGeometries.push(glideGeo);
+
+      // Corner mounting hex bolts under gusset plate
+      const sx = Math.sign(tx);
+      const sz = Math.sign(tz);
+      for (const [bx, bz] of [
+        [tx - sx * 0.2, tz - sz * 0.2],
+        [tx + sx * 0.18, tz - sz * 0.2],
+        [tx - sx * 0.2, tz + sz * 0.18],
+      ]) {
+        const bolt = new THREE.CylinderGeometry(0.04, 0.04, 0.035, 6);
+        bolt.translate(bx, -TABLE_THICKNESS - 0.06, bz);
+        hardwareGeometries.push(bolt);
+      }
+    }
+
+    // Side H-stretcher tie bars connecting front & back legs on left and right sides
+    const stretcherY = FLOOR_Y + 1.45;
+    const stretcherFrac = (legTopY - stretcherY) / (legTopY - legBottomY);
+    const stretcherZ = THREE.MathUtils.lerp(legTopOffsetZ, legFootOffsetZ, stretcherFrac);
+    const stretcherX = THREE.MathUtils.lerp(legTopOffsetX, legFootOffsetX, stretcherFrac);
+    for (const sx of [-1, 1]) {
+      const bar = new THREE.CylinderGeometry(0.08, 0.08, stretcherZ * 2, 10);
+      bar.rotateX(Math.PI * 0.5);
+      bar.translate(sx * stretcherX, stretcherY, 0);
+      steelGeometries.push(bar);
+    }
+
+    const mergedSteelGeo = BufferGeometryUtils.mergeGeometries(steelGeometries, false) ?? steelGeometries[0];
     for (const g of steelGeometries) {
       if (g !== mergedSteelGeo) g.dispose();
     }
     const steelMesh = new THREE.Mesh(mergedSteelGeo, steelMat);
     steelMesh.receiveShadow = true;
+    steelMesh.castShadow = true;
     this.deskGroup.add(steelMesh);
     this.disposables.push(mergedSteelGeo, steelMat);
 
+    // Merged zinc bolts & hardware
+    const hardwareMat = new THREE.MeshStandardMaterial({
+      color: 0x94a3b8,
+      roughness: 0.34,
+      metalness: 0.85,
+    });
+    const mergedHardwareGeo =
+      BufferGeometryUtils.mergeGeometries(hardwareGeometries, false) ?? hardwareGeometries[0];
+    for (const g of hardwareGeometries) {
+      if (g !== mergedHardwareGeo) g.dispose();
+    }
+    const hardwareMesh = new THREE.Mesh(mergedHardwareGeo, hardwareMat);
+    this.deskGroup.add(hardwareMesh);
+    this.disposables.push(mergedHardwareGeo, hardwareMat);
+
+    // Merged rubber floor glides
+    const glideMat = new THREE.MeshStandardMaterial({
+      color: 0x1e2530,
+      roughness: 0.9,
+      metalness: 0.04,
+    });
     const mergedGlideGeo = BufferGeometryUtils.mergeGeometries(glideGeometries, false) ?? glideGeometries[0];
     for (const g of glideGeometries) {
       if (g !== mergedGlideGeo) g.dispose();
@@ -275,18 +414,17 @@ export class TableEnvironment {
     this.deskGroup.add(glideMesh);
     this.disposables.push(mergedGlideGeo, glideMat);
 
-    // 5. Soft contact shadow beneath the desk on the classroom floor
-    const shadowTex = this.createContactShadowTexture();
-    const shadowGeo = new THREE.PlaneGeometry(TABLE_WIDTH + 4.5, TABLE_DEPTH + 4.0);
+    // 4. Combined soft contact shadow beneath desk & 4 feet on classroom floor
+    const shadowGeo = new THREE.PlaneGeometry(SHADOW_PLANE_W, SHADOW_PLANE_D);
     const shadowMat = new THREE.MeshBasicMaterial({
-      map: shadowTex,
+      map: maps.contactShadow,
       transparent: true,
-      opacity: 0.52,
+      opacity: 0.62,
       depthWrite: false,
     });
     const deskFloorShadow = new THREE.Mesh(shadowGeo, shadowMat);
     deskFloorShadow.rotation.x = -Math.PI * 0.5;
-    deskFloorShadow.position.set(0, FLOOR_Y + 0.02, 0);
+    deskFloorShadow.position.set(0, FLOOR_Y + 0.015, 0);
     this.deskGroup.add(deskFloorShadow);
     this.disposables.push(shadowGeo, shadowMat);
   }
@@ -433,11 +571,12 @@ export class TableEnvironment {
 
   private buildClassroomBackdrop(maxAnisotropy: number): void {
     // 1. Classroom floor
-    const floorTex = this.createFloorTexture(maxAnisotropy);
+    const floorTex = createClassroomFloorTexture(maxAnisotropy);
+    this.disposables.push(floorTex);
     const floorGeo = new THREE.PlaneGeometry(90, 90);
     const floorMat = new THREE.MeshStandardMaterial({
       map: floorTex,
-      roughness: 0.82,
+      roughness: 0.84,
       metalness: 0.02,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -473,7 +612,7 @@ export class TableEnvironment {
     this.wallGroup.add(board);
     this.disposables.push(boardGeo, boardMat);
 
-    // Merged classroom wood trims (baseboard + chalkboard frame)
+    // Merged classroom wood trims (baseboard + chalkboard frame + chalk ledge)
     const trimMat = new THREE.MeshStandardMaterial({
       color: 0x8b6240,
       roughness: 0.68,
@@ -485,9 +624,14 @@ export class TableEnvironment {
     const frameGeo = new THREE.BoxGeometry(15.1, 6.8, 0.12);
     frameGeo.translate(-1.5, FLOOR_Y + 8.8, -13.08);
 
-    const mergedTrimGeo = BufferGeometryUtils.mergeGeometries([baseboardGeo, frameGeo], false) ?? baseboardGeo;
+    const chalkTrayGeo = new THREE.BoxGeometry(15.1, 0.16, 0.34);
+    chalkTrayGeo.translate(-1.5, FLOOR_Y + 5.5, -12.9);
+
+    const mergedTrimGeo =
+      BufferGeometryUtils.mergeGeometries([baseboardGeo, frameGeo, chalkTrayGeo], false) ?? baseboardGeo;
     baseboardGeo.dispose();
     frameGeo.dispose();
+    chalkTrayGeo.dispose();
     const mergedTrimMesh = new THREE.Mesh(mergedTrimGeo, trimMat);
     this.wallGroup.add(mergedTrimMesh);
     this.disposables.push(mergedTrimGeo, trimMat);

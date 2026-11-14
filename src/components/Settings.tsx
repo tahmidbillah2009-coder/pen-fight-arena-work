@@ -1,7 +1,6 @@
 import React from 'react';
-import { ChevronRight, Gauge, HelpCircle, PenTool, RotateCcw, X } from 'lucide-react';
+import { ChevronRight, Gauge, HelpCircle, PenTool, RotateCcw, Settings as SettingsIcon } from 'lucide-react';
 import { DIFFICULTY_CONFIGS } from '../ai/Difficulty';
-import { PEN_SPECS, RARITY_COLORS } from '../utils/Constants';
 import {
   DifficultyLevel,
   EffectQuality,
@@ -10,6 +9,15 @@ import {
   ResolutionPreference,
   ShadowQuality,
 } from '../game/GameState';
+import { PEN_SPECS } from '../utils/Constants';
+import {
+  getPaperRarityTheme,
+  PaperDivider,
+  PaperModalShell,
+  PaperSectionLabel,
+  PaperSegmented,
+  PaperToggle,
+} from './PaperUI';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -55,71 +63,19 @@ const RESOLUTIONS: Array<{ id: ResolutionPreference; label: string }> = [
   { id: '67', label: '67%' },
 ];
 
-/** Shared shell for a labelled settings row. */
-const Row: React.FC<{ title: string; hint: string; children: React.ReactNode }> = ({
+const SettingsRow: React.FC<{ title: string; hint: string; children: React.ReactNode }> = ({
   title,
   hint,
   children,
 }) => (
-  <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 sm:px-4 sm:py-3">
+  <div className="flex items-center justify-between gap-3 rounded-lg border border-[#45413C]/70 bg-[#FFFDF8] px-3.5 py-2.5 sm:px-4">
     <div className="min-w-0">
-      <div className="text-sm font-semibold text-white">{title}</div>
-      <div className="text-xs text-slate-400">{hint}</div>
+      <div className="text-xs font-bold text-[#292725] sm:text-sm">{title}</div>
+      <div className="text-[11px] text-[#6E6A64]">{hint}</div>
     </div>
     {children}
   </div>
 );
-
-/** ON / OFF pill used by every boolean setting. */
-const ToggleButton: React.FC<{ on: boolean; onClick: () => void; accent?: string }> = ({
-  on,
-  onClick,
-  accent = 'bg-blue-600',
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    aria-pressed={on}
-    className={`min-h-[40px] min-w-[64px] shrink-0 rounded-lg px-3 text-xs font-bold transition-colors ${
-      on ? `${accent} text-white` : 'bg-slate-800 text-slate-400'
-    }`}
-  >
-    {on ? 'ON' : 'OFF'}
-  </button>
-);
-
-/** Multi-option segmented control used by every enumerated setting. */
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  columns,
-}: {
-  options: Array<{ id: T; label: string }>;
-  value: T;
-  onChange: (next: T) => void;
-  columns?: number;
-}) {
-  return (
-    <div
-      className="grid gap-1 rounded-xl bg-slate-900 p-1"
-      style={{ gridTemplateColumns: `repeat(${columns ?? options.length}, minmax(0, 1fr))` }}
-    >
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          onClick={() => onChange(option.id)}
-          className={`min-h-[40px] rounded-lg py-2 text-xs font-semibold transition-colors ${
-            value === option.id ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -136,282 +92,254 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   const penSpec = PEN_SPECS[settings.playerPenType];
-  const rarity = RARITY_COLORS[penSpec.rarity];
+  const rarity = getPaperRarityTheme(penSpec.rarity);
 
   return (
-    <div className="safe-pad-x safe-pad-top safe-pad-bottom fixed inset-0 z-40 flex items-center justify-center bg-black/60">
-      <div className="animate-modal-in modal-scroll-area max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-white/15 bg-[#12161f] p-5 shadow-2xl sm:p-6">
-        <div className="mb-4 flex items-center justify-between sm:mb-5">
-          <h2 className="font-display text-lg font-bold text-white sm:text-xl">Settings</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close settings"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <PaperModalShell
+      title="Settings"
+      subtitle="Audio, gameplay & graphics preferences"
+      icon={<SettingsIcon className="h-4 w-4" />}
+      onClose={onClose}
+      maxWidthClass="max-w-lg"
+    >
+      <div className="space-y-5 p-4 sm:p-6">
+        {/* Audio Section */}
+        <div className="space-y-2">
+          <PaperSectionLabel>Audio</PaperSectionLabel>
+          <SettingsRow title="Sound Effects" hint="Pen impacts, grab clicks & alerts">
+            <PaperToggle
+              label="Toggle sound effects"
+              checked={settings.sfxEnabled}
+              onChange={() => onUpdateSettings({ ...settings, sfxEnabled: !settings.sfxEnabled })}
+            />
+          </SettingsRow>
+          <SettingsRow title="Background Music" hint="Calm classroom marimba loop">
+            <PaperToggle
+              label="Toggle background music"
+              checked={settings.musicEnabled}
+              onChange={() => onUpdateSettings({ ...settings, musicEnabled: !settings.musicEnabled })}
+            />
+          </SettingsRow>
         </div>
 
-        <div className="space-y-4 sm:space-y-5">
-          {/* Audio Toggles */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 sm:px-4 sm:py-3">
-              <div>
-                <div className="text-sm font-semibold text-white">Sound Effects</div>
-                <div className="text-xs text-slate-400">Pen impacts, grab clicks & alerts</div>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateSettings({ ...settings, sfxEnabled: !settings.sfxEnabled })
-                }
-                className={`min-h-[40px] min-w-[64px] shrink-0 rounded-lg px-3 text-xs font-bold transition-colors ${
-                  settings.sfxEnabled
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {settings.sfxEnabled ? 'ON' : 'OFF'}
-              </button>
-            </div>
+        <PaperDivider />
 
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 sm:px-4 sm:py-3">
-              <div>
-                <div className="text-sm font-semibold text-white">Background Music</div>
-                <div className="text-xs text-slate-400">Calm classroom marimba loop</div>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateSettings({ ...settings, musicEnabled: !settings.musicEnabled })
-                }
-                className={`min-h-[40px] min-w-[64px] shrink-0 rounded-lg px-3 text-xs font-bold transition-colors ${
-                  settings.musicEnabled
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {settings.musicEnabled ? 'ON' : 'OFF'}
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 sm:px-4 sm:py-3">
-              <div>
-                <div className="text-sm font-semibold text-white">Trajectory Prediction</div>
-                <div className="text-xs text-slate-400">Physics-simulated path & landing reticle</div>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateSettings({ ...settings, showTrajectory: !settings.showTrajectory })
-                }
-                className={`min-h-[40px] min-w-[64px] shrink-0 rounded-lg px-3 text-xs font-bold transition-colors ${
-                  settings.showTrajectory
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {settings.showTrajectory ? 'ON' : 'OFF'}
-              </button>
-            </div>
-
-            <Row title="FPS Counter" hint="Live FPS, frame time &amp; quality readout">
-              <ToggleButton
-                on={settings.showFps}
-                accent="bg-emerald-600"
-                onClick={() => onUpdateSettings({ ...settings, showFps: !settings.showFps })}
-              />
-            </Row>
-
-            <Row
-              title="Performance Mode"
-              hint="Pins lowest quality for weak or very low-end devices"
-            >
-              <ToggleButton
-                on={settings.performanceMode}
-                accent="bg-amber-600"
-                onClick={() =>
-                  onUpdateSettings({ ...settings, performanceMode: !settings.performanceMode })
-                }
-              />
-            </Row>
-          </div>
-
-          {/* Performance — quality ceilings applied on top of the graphics tier */}
-          <div>
-            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-              <Gauge className="h-3.5 w-3.5 text-sky-400" />
-              <span>Performance</span>
-            </div>
-            <div className="space-y-2.5">
-              <Row title="Shadow Quality" hint="Lightweight on mobile, crisper on desktop">
-                <div className="w-[168px] shrink-0">
-                  <Segmented
-                    options={SHADOWS}
-                    value={settings.shadowQuality}
-                    onChange={(shadowQuality) => onUpdateSettings({ ...settings, shadowQuality })}
-                  />
-                </div>
-              </Row>
-
-              <Row title="Particle Effects" hint="Impact sparks, shockwaves & trails">
-                <div className="w-[168px] shrink-0">
-                  <Segmented
-                    options={PARTICLES}
-                    value={settings.particleEffects}
-                    onChange={(particleEffects) =>
-                      onUpdateSettings({ ...settings, particleEffects })
-                    }
-                  />
-                </div>
-              </Row>
-
-              <Row title="Motion Effects" hint="Camera shake, hitstop & shot-follow camera">
-                <ToggleButton
-                  on={settings.motionEffects}
-                  onClick={() =>
-                    onUpdateSettings({ ...settings, motionEffects: !settings.motionEffects })
-                  }
-                />
-              </Row>
-
-              <Row title="Render Resolution" hint="Scales 3D buffer while UI stays native">
-                <div className="w-[190px] shrink-0">
-                  <Segmented
-                    options={RESOLUTIONS}
-                    value={settings.renderResolution}
-                    columns={3}
-                    onChange={(renderResolution) =>
-                      onUpdateSettings({ ...settings, renderResolution })
-                    }
-                  />
-                </div>
-              </Row>
-
-              {onOpenBenchmark && (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-sky-500/25 bg-sky-950/20 px-3.5 py-2.5 sm:px-4 sm:py-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">Hardware Benchmark</div>
-                    <div className="text-xs text-slate-400">Measure Intel HD 4600 1080p FPS &amp; draw calls</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenBenchmark();
-                    }}
-                    className="min-h-[38px] shrink-0 rounded-lg bg-sky-600 px-3.5 text-xs font-bold text-white transition-colors hover:bg-sky-500"
-                  >
-                    Run Test
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Equipped Pen — solo / practice only (multiplayer players equip pens in Player Setup) */}
-          {!isMultiplayer && (
-            <div>
-              <div className="mb-2 text-xs font-semibold text-slate-400">Your Pen</div>
-              <button
-                type="button"
-                onClick={onOpenPenSelector}
-                className="group flex w-full items-center gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-left transition-colors hover:border-sky-400/50 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-blue-400"
-              >
-                <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${rarity.ring} ${rarity.bg}`}
-                >
-                  <PenTool className={`h-4 w-4 ${rarity.text}`} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-sm font-bold text-white">{penSpec.label}</span>
-                    <span
-                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${rarity.bg} ${rarity.text}`}
-                    >
-                      {penSpec.rarity}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-slate-400">
-                    {penSpec.tagline}
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-300" />
-              </button>
-            </div>
-          )}
-
-          {/* Graphics Quality */}
-          <div>
-            <div className="mb-2 text-xs font-semibold text-slate-400">Graphics Quality</div>
-            <Segmented
-              options={QUALITIES}
-              value={settings.graphicsQuality}
-              onChange={(graphicsQuality) => onUpdateSettings({ ...settings, graphicsQuality })}
+        {/* Gameplay & Controls Section */}
+        <div className="space-y-2.5">
+          <PaperSectionLabel>Gameplay &amp; Controls</PaperSectionLabel>
+          <SettingsRow
+            title="Trajectory Prediction"
+            hint="Physics-simulated path & landing reticle"
+          >
+            <PaperToggle
+              label="Toggle trajectory prediction"
+              checked={settings.showTrajectory}
+              onChange={() =>
+                onUpdateSettings({ ...settings, showTrajectory: !settings.showTrajectory })
+              }
             />
-            <p className="mt-1.5 text-xs text-slate-400">
-              {settings.graphicsQuality === 'AUTO'
-                ? 'Quality adapts automatically to keep the framerate steady.'
-                : 'Fixed quality tier — the framerate is not throttled to protect it.'}
-            </p>
-          </div>
+          </SettingsRow>
 
-          {/* AI Difficulty — solo vs AI only */}
+          <SettingsRow title="Motion Effects" hint="Camera shake, hitstop & shot-follow camera">
+            <PaperToggle
+              label="Toggle motion effects"
+              checked={settings.motionEffects}
+              onChange={() =>
+                onUpdateSettings({ ...settings, motionEffects: !settings.motionEffects })
+              }
+            />
+          </SettingsRow>
+
           {!isMultiplayer && (
-            <div>
-              <div className="mb-2 text-xs font-semibold text-slate-400">AI Difficulty</div>
-              <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-900 p-1">
-                {DIFFICULTIES.map((lvl) => (
-                  <button
-                    key={lvl}
-                    type="button"
-                    onClick={() => onUpdateSettings({ ...settings, difficulty: lvl })}
-                    className={`min-h-[40px] rounded-lg py-2 text-xs font-semibold transition-colors ${
-                      settings.difficulty === lvl
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {DIFFICULTY_CONFIGS[lvl].label}
-                  </button>
-                ))}
+            <div className="space-y-1.5 pt-1">
+              <div className="text-xs font-bold text-[#292725]">AI Difficulty</div>
+              <div className="grid grid-cols-4 gap-1 rounded-lg border border-[#45413C] bg-[#EFEAE0] p-1">
+                {DIFFICULTIES.map((lvl) => {
+                  const active = settings.difficulty === lvl;
+                  return (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => onUpdateSettings({ ...settings, difficulty: lvl })}
+                      aria-pressed={active}
+                      className={`min-h-[36px] rounded-md py-1.5 text-xs font-bold transition-colors ${
+                        active
+                          ? 'border border-[#45413C] bg-[#4F6D8A] text-[#FFFDF8] shadow-[1.5px_1.5px_0px_#45413C]'
+                          : 'border border-transparent text-[#57534E] hover:text-[#292725]'
+                      }`}
+                    >
+                      {DIFFICULTY_CONFIGS[lvl].label}
+                    </button>
+                  );
+                })}
               </div>
-              <p className="mt-1.5 text-xs text-slate-400">
+              <p className="text-[11px] text-[#6E6A64]">
                 {DIFFICULTY_CONFIGS[settings.difficulty].description}
               </p>
             </div>
           )}
 
-          {/* Quick Actions */}
-          <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:gap-2.5">
-            {isInMatch && (
+          {!isMultiplayer && (
+            <button
+              type="button"
+              onClick={onOpenPenSelector}
+              className="paper-btn flex w-full items-center gap-3 rounded-lg border-[1.5px] border-[#45413C] bg-[#FFFDF8] px-3.5 py-2.5 text-left hover:bg-[#F7F3EA]"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#45413C] bg-[#EFEAE0] text-[#292725]">
+                <PenTool className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-sm font-bold text-[#292725]">
+                    {penSpec.label}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${rarity.badgeBg} ${rarity.badgeText} ${rarity.badgeBorder}`}
+                  >
+                    {penSpec.rarity}
+                  </span>
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] text-[#6E6A64]">
+                  {penSpec.tagline}
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#6E6A64]" />
+            </button>
+          )}
+        </div>
+
+        <PaperDivider />
+
+        {/* Graphics & Performance */}
+        <div className="space-y-2.5">
+          <PaperSectionLabel
+            right={<Gauge className="inline h-3.5 w-3.5 text-[#4F6D8A]" />}
+          >
+            Graphics &amp; Performance
+          </PaperSectionLabel>
+
+          <div className="space-y-1.5">
+            <div className="text-xs font-bold text-[#292725]">Graphics Quality</div>
+            <PaperSegmented
+              options={QUALITIES}
+              value={settings.graphicsQuality}
+              onChange={(graphicsQuality) => onUpdateSettings({ ...settings, graphicsQuality })}
+            />
+            <p className="text-[11px] text-[#6E6A64]">
+              {settings.graphicsQuality === 'AUTO'
+                ? 'Quality adapts automatically to keep framerate smooth.'
+                : 'Fixed quality tier — resolution & shading remain pinned.'}
+            </p>
+          </div>
+
+          <SettingsRow title="FPS Counter" hint="Live FPS, frame time & quality readout">
+            <PaperToggle
+              label="Toggle FPS counter"
+              checked={settings.showFps}
+              onChange={() => onUpdateSettings({ ...settings, showFps: !settings.showFps })}
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            title="Performance Mode"
+            hint="Pins lowest quality for weak or low-end devices"
+          >
+            <PaperToggle
+              label="Toggle performance mode"
+              checked={settings.performanceMode}
+              onChange={() =>
+                onUpdateSettings({ ...settings, performanceMode: !settings.performanceMode })
+              }
+            />
+          </SettingsRow>
+
+          <SettingsRow title="Shadow Quality" hint="Lightweight on mobile, crisper on desktop">
+            <div className="w-[156px] shrink-0">
+              <PaperSegmented
+                options={SHADOWS}
+                value={settings.shadowQuality}
+                onChange={(shadowQuality) => onUpdateSettings({ ...settings, shadowQuality })}
+              />
+            </div>
+          </SettingsRow>
+
+          <SettingsRow title="Particle Effects" hint="Impact sparks & dust puffs">
+            <div className="w-[156px] shrink-0">
+              <PaperSegmented
+                options={PARTICLES}
+                value={settings.particleEffects}
+                onChange={(particleEffects) =>
+                  onUpdateSettings({ ...settings, particleEffects })
+                }
+              />
+            </div>
+          </SettingsRow>
+
+          <SettingsRow title="Render Resolution" hint="Scales 3D canvas while UI stays crisp">
+            <div className="w-[180px] shrink-0">
+              <PaperSegmented
+                options={RESOLUTIONS}
+                value={settings.renderResolution}
+                columns={3}
+                onChange={(renderResolution) =>
+                  onUpdateSettings({ ...settings, renderResolution })
+                }
+              />
+            </div>
+          </SettingsRow>
+
+          {onOpenBenchmark && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border-[1.5px] border-[#365B82] bg-[#E8EFF6] px-3.5 py-2.5 sm:px-4">
+              <div>
+                <div className="text-xs font-bold text-[#292725] sm:text-sm">
+                  Hardware Benchmark
+                </div>
+                <div className="text-[11px] text-[#365B82]">
+                  Measure 1080p FPS, physics cost &amp; draw calls
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => {
-                  onRestartMatch();
                   onClose();
+                  onOpenBenchmark();
                 }}
-                className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-xs font-bold text-white transition-colors hover:bg-amber-500"
+                className="paper-btn min-h-[38px] shrink-0 rounded-lg border-[1.5px] border-[#45413C] bg-[#4F6D8A] px-3.5 text-xs font-bold text-[#FFFDF8] hover:bg-[#435E79]"
               >
-                <RotateCcw className="h-4 w-4" />
-                <span>Restart Match</span>
+                Run Test
               </button>
-            )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:gap-2.5">
+          {isInMatch && (
             <button
               type="button"
               onClick={() => {
+                onRestartMatch();
                 onClose();
-                onOpenHowToPlay();
               }}
-              className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-800 px-4 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-700"
+              className="paper-btn flex min-h-[42px] flex-1 items-center justify-center gap-2 rounded-lg border-[1.5px] border-[#9C6C2B] bg-[#FBF3E2] px-4 text-xs font-bold text-[#85581A] hover:bg-[#F5E8CC]"
             >
-              <HelpCircle className="h-4 w-4 text-sky-400" />
-              <span>How to Play</span>
+              <RotateCcw className="h-4 w-4" />
+              <span>Restart Match</span>
             </button>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenHowToPlay();
+            }}
+            className="paper-btn flex min-h-[42px] flex-1 items-center justify-center gap-2 rounded-lg border-[1.5px] border-[#45413C] bg-[#EFEAE0] px-4 text-xs font-bold text-[#292725] hover:bg-[#E4DCCB]"
+          >
+            <HelpCircle className="h-4 w-4 text-[#4F6D8A]" />
+            <span>How to Play</span>
+          </button>
         </div>
       </div>
-    </div>
+    </PaperModalShell>
   );
 };
